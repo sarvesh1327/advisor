@@ -184,7 +184,7 @@ class MLXAdvisorRuntime:
         )
 
     def _format_prompt(self, packet) -> str:
-        # The prompt still carries coding-oriented fields until domain adapters are split out.
+        # Keep legacy coding cues, but surface the generic packet so other adapters can share the same runtime.
         json_template = (
             '{"task_type": "feature", "relevant_files": [{"path": "src/app/page.tsx", '
             '"why": "landing page entrypoint", "priority": 1}], "relevant_symbols": [], '
@@ -204,14 +204,19 @@ class MLXAdvisorRuntime:
             "- Keep output concise and useful\n\n"
             f"TASK: {packet.task_text}\n"
             f"TASK_TYPE: {packet.task_type}\n"
+            f"TASK_DOMAIN: {packet.task.domain}\n"
+            f"CONTEXT_SUMMARY: {packet.context.summary}\n"
             f"REPO: {packet.repo}\n"
             f"MODULES: {packet.repo_summary.modules}\n"
             f"HOTSPOTS: {packet.repo_summary.hotspots}\n"
             f"FILE_TREE: {packet.repo_summary.file_tree_slice}\n"
             f"CANDIDATE_FILES: {[item.model_dump() for item in packet.candidate_files]}\n"
+            f"ARTIFACTS: {[item.model_dump() for item in packet.artifacts]}\n"
             f"RECENT_FAILURES: {[item.model_dump() for item in packet.recent_failures]}\n"
+            f"HISTORY: {[item.model_dump() for item in packet.history]}\n"
             f"CONSTRAINTS: {packet.constraints}\n"
             f"ACCEPTANCE_CRITERIA: {packet.acceptance_criteria}\n"
+            f"DOMAIN_CAPABILITIES: {[item.model_dump() for item in packet.domain_capabilities]}\n"
             f"JSON_TEMPLATE: {json_template}\n"
         )
 

@@ -66,6 +66,15 @@ class AdvisorHistoryEntry(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AdvisorCapabilityDescriptor(BaseModel):
+    # Adapters declare which packet features a runtime can safely depend on.
+    domain: str
+    supported_artifact_kinds: list[str] = Field(default_factory=list)
+    supported_packet_fields: list[str] = Field(default_factory=list)
+    supports_changed_artifacts: bool = False
+    supports_symbol_regions: bool = False
+
+
 class AdvisorTaskRequest(BaseModel):
     run_id: str | None = None
     task_text: str
@@ -96,6 +105,7 @@ class AdvisorInputPacket(BaseModel):
     context: AdvisorContext | None = None
     artifacts: list[AdvisorArtifact] = Field(default_factory=list)
     history: list[AdvisorHistoryEntry] = Field(default_factory=list)
+    domain_capabilities: list[AdvisorCapabilityDescriptor] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def populate_generic_fields(self) -> "AdvisorInputPacket":
@@ -132,6 +142,16 @@ class AdvisorInputPacket(BaseModel):
                     metadata={"fix_hint": item.fix_hint} if item.fix_hint else {},
                 )
                 for item in self.recent_failures
+            ]
+        if not self.domain_capabilities:
+            self.domain_capabilities = [
+                AdvisorCapabilityDescriptor(
+                    domain=self.task.domain,
+                    supported_artifact_kinds=sorted({item.kind for item in self.artifacts}) or ["file"],
+                    supported_packet_fields=["task", "context", "artifacts", "constraints", "history", "acceptance_criteria"],
+                    supports_changed_artifacts=True,
+                    supports_symbol_regions=False,
+                )
             ]
         return self
 

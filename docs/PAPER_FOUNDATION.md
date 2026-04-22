@@ -47,6 +47,32 @@ The repo should be optimized around the paper's core loop:
 - The paper's value includes advisor transfer across executors.
 - Avoid tight coupling to one frontier model or one agent harness unless the coupling is explicitly isolated.
 
+## Canonical core vs adapter-only rule
+
+The generic core must become the system of record for:
+- packet storage and replay
+- advice storage and rendering
+- runtime prompts and injection surfaces
+- evaluation and reward inputs
+- orchestration lineage
+
+Adapters should be responsible only for:
+- translating domain-native inputs into the generic packet
+- attaching domain-specific extension fields when strictly necessary
+- defining capability descriptors for what the domain supports
+
+Coding-specific structures must not remain the hidden canonical truth once a generic equivalent exists.
+For example:
+- generic `artifacts` should become canonical over coding-only `candidate_files`
+- generic `history` should become canonical over coding-only `recent_failures`
+- generic focus/advice targets should become canonical over file-only assumptions where possible
+
+If a coding-specific field is still kept for compatibility, it should be treated as:
+- legacy compatibility state, or
+- an adapter extension
+
+not the primary product abstraction.
+
 ## Non-goals for the core
 
 The core should not hardcode assumptions like:
