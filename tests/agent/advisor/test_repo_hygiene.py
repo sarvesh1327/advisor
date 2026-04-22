@@ -11,14 +11,14 @@ def test_contributing_guide_exists():
     assert "pytest tests/agent/advisor -q" in text
 
 
-def test_ci_workflow_exists_and_tests_supported_python_versions():
+def test_ci_workflow_exists_and_runs_lint_only():
     workflow = REPO_ROOT / ".github" / "workflows" / "ci.yml"
     assert workflow.exists()
     text = workflow.read_text(encoding="utf-8")
     assert "python-version" in text
-    assert "3.11" in text
-    assert "3.12" in text
-    assert "pytest tests/agent/advisor -q" in text
+    assert 'python-version: "3.12"' in text
+    assert "ruff check ." in text
+    assert "pytest tests/agent/advisor -q" not in text
 
 
 def test_release_workflow_exists():
