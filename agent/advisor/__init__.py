@@ -1,5 +1,7 @@
 """Advisor modules for local pre-execution steering."""
 
+from .api import create_gateway, create_http_app, get_version, run_task
+from .gateway import AdvisorGateway
 from .schemas import (
     AdviceBlock,
     AdvisorInputPacket,
@@ -8,9 +10,10 @@ from .schemas import (
     AdvisorTaskRunResult,
 )
 from .settings import AdvisorSettings
-from .gateway import AdvisorGateway
+from .version import __version__
 
 __all__ = [
+    "__version__",
     "AdviceBlock",
     "AdvisorGateway",
     "AdvisorInputPacket",
@@ -18,4 +21,8 @@ __all__ = [
     "AdvisorSettings",
     "AdvisorTaskRequest",
     "AdvisorTaskRunResult",
+    "create_gateway",
+    "create_http_app",
+    "get_version",
+    "run_task",
 ]
