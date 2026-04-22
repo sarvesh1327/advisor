@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>Advisor V1 Engineering Architecture</title>
+  <style>
+    body{margin:0;background:#020617;color:#e2e8f0;font-family:Arial,sans-serif}
+    svg{display:block;margin:0 auto;background:#020617}
+    .title{font-size:28px;font-weight:700;fill:#f8fafc}
+    .subtitle{font-size:15px;fill:#94a3b8}
+    .box{rx:16;ry:16;stroke-width:2}
+    .label{font-size:18px;font-weight:700;fill:#e2e8f0}
+    .small{font-size:13px;fill:#cbd5e1}
+    .tiny{font-size:12px;fill:#94a3b8}
+    .arrow{stroke:#94a3b8;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    .dash{stroke-dasharray:7 5}
+  </style>
+</head>
+<body>
+<svg width='1800' height='1500' viewBox='0 0 1800 1500' xmlns='http://www.w3.org/2000/svg'>
+  <defs>
+    <marker id='arrow' markerWidth='10' markerHeight='10' refX='8' refY='3' orient='auto'>
+      <path d='M0,0 L0,6 L9,3 z' fill='#94a3b8'/>
+    </marker>
+  </defs>
+
+  <text x='900' y='50' text-anchor='middle' class='title'>Advisor V1 — Engineering Architecture (MLX + Qwen 2.5 3B)</text>
+  <text x='900' y='78' text-anchor='middle' class='subtitle'>Local steering model in front of Hermes / Codex. Advisor suggests; main model executes.</text>
+
+  <rect x='40' y='110' width='1720' height='1290' class='box dash' fill='rgba(30,41,59,.10)' stroke='#475569'/>
+  <text x='70' y='140' class='tiny'>Single-machine local deployment on Mac (M3 Pro) for v1</text>
+
+  <rect x='80' y='180' width='430' height='260' class='box' fill='rgba(8,51,68,.45)' stroke='#22d3ee'/>
+  <text x='295' y='215' text-anchor='middle' class='label'>1. Entry + Orchestrator</text>
+  <text x='110' y='250' class='small'>Service: advisor_gateway</text>
+  <text x='110' y='275' class='small'>Responsibilities:</text>
+  <text x='130' y='300' class='small'>• receive task_run request from Hermes wrapper</text>
+  <text x='130' y='325' class='small'>• assign run_id</text>
+  <text x='130' y='350' class='small'>• fetch repo path / branch / session metadata</text>
+  <text x='130' y='375' class='small'>• call context builder → advisor runtime</text>
+  <text x='130' y='400' class='small'>• return structured advice JSON</text>
+
+  <rect x='560' y='180' width='520' height='330' class='box' fill='rgba(6,78,59,.45)' stroke='#34d399'/>
+  <text x='820' y='215' text-anchor='middle' class='label'>2. Context Builder Service</text>
+  <text x='590' y='250' class='small'>Service: context_builder</text>
+  <text x='590' y='275' class='small'>Submodules:</text>
+  <text x='610' y='300' class='small'>• task_parser(task_text) → task_type, constraints</text>
+  <text x='610' y='325' class='small'>• repo_snapshotter(repo_path) → tree slice, git status, branch</text>
+  <text x='610' y='350' class='small'>• symbol_selector(candidate files / modules / hotspots)</text>
+  <text x='610' y='375' class='small'>• failure_retriever(similar prior failures from trace store)</text>
+  <text x='610' y='400' class='small'>• environment_probe(tool limits, runtime, enabled tools)</text>
+  <text x='610' y='425' class='small'>• packet_compressor(compact structured packet for advisor)</text>
+  <text x='590' y='465' class='small'>Output: AdvisorInputPacket v1 JSON</text>
+
+  <rect x='1130' y='180' width='300' height='250' class='box' fill='rgba(76,29,149,.45)' stroke='#a78bfa'/>
+  <text x='1280' y='215' text-anchor='middle' class='label'>3. Trace Store</text>
+  <text x='1160' y='250' class='small'>Storage: SQLite first</text>
+  <text x='1160' y='275' class='small'>Tables:</text>
+  <text x='1180' y='300' class='small'>• runs</text>
+  <text x='1180' y='325' class='small'>• run_contexts</text>
+  <text x='1180' y='350' class='small'>• run_outcomes</text>
+  <text x='1180' y='375' class='small'>• advice_records</text>
+  <text x='1180' y='400' class='small'>• failure_patterns</text>
+
+  <rect x='1480' y='180' width='240' height='250' class='box' fill='rgba(120,53,15,.35)' stroke='#fbbf24'/>
+  <text x='1600' y='215' text-anchor='middle' class='label'>4. Embedding / Search</text>
+  <text x='1510' y='250' class='small'>Optional in v1</text>
+  <text x='1510' y='275' class='small'>Can start with:</text>
+  <text x='1530' y='300' class='small'>• SQLite FTS5</text>
+  <text x='1530' y='325' class='small'>Later:</text>
+  <text x='1530' y='350' class='small'>• local embeddings</text>
+  <text x='1530' y='375' class='small'>• semantic recall</text>
+
+  <rect x='420' y='630' width='470' height='300' class='box' fill='rgba(136,19,55,.40)' stroke='#fb7185'/>
+  <text x='655' y='665' text-anchor='middle' class='label'>5. Advisor Runtime</text>
+  <text x='450' y='700' class='small'>Service: advisor_runtime_mlx</text>
+  <text x='450' y='725' class='small'>Model: Qwen 2.5 3B Instruct (MLX)</text>
+  <text x='450' y='750' class='small'>Responsibilities:</text>
+  <text x='470' y='775' class='small'>• format stable advisor prompt</text>
+  <text x='470' y='800' class='small'>• run local inference with bounded max tokens</text>
+  <text x='470' y='825' class='small'>• emit JSON only</text>
+  <text x='470' y='850' class='small'>• keep latency low enough for pre-run use</text>
+  <text x='470' y='875' class='small'>• no tools, no execution, no shell access</text>
+
+  <rect x='960' y='630' width='430' height='300' class='box' fill='rgba(251,146,60,.30)' stroke='#fb923c'/>
+  <text x='1175' y='665' text-anchor='middle' class='label'>6. Advice Policy Gate</text>
+  <text x='990' y='700' class='small'>Service: advice_validator</text>
+  <text x='990' y='725' class='small'>Responsibilities:</text>
+  <text x='1010' y='750' class='small'>• validate AdviceBlock schema</text>
+  <text x='1010' y='775' class='small'>• truncate oversized advice</text>
+  <text x='1010' y='800' class='small'>• strip unsafe directives</text>
+  <text x='1010' y='825' class='small'>• normalize confidence</text>
+  <text x='1010' y='850' class='small'>• persist advice_record linked to run_id</text>
+  <text x='990' y='885' class='small'>Output: safe advice JSON for main model injection</text>
+
+  <rect x='1460' y='630' width='260' height='300' class='box' fill='rgba(30,41,59,.50)' stroke='#94a3b8'/>
+  <text x='1590' y='665' text-anchor='middle' class='label'>7. Injection Hook</text>
+  <text x='1490' y='700' class='small'>Hermes wrapper inserts:</text>
+  <text x='1510' y='725' class='small'>• system hint OR</text>
+  <text x='1510' y='750' class='small'>• user-prefix block</text>
+  <text x='1510' y='775' class='small'>before main run</text>
+  <text x='1490' y='815' class='small'>Never overrides:</text>
+  <text x='1510' y='840' class='small'>• approvals</text>
+  <text x='1510' y='865' class='small'>• tool safety</text>
+  <text x='1510' y='890' class='small'>• system policy</text>
+
+  <rect x='260' y='1060' width='520' height='230' class='box' fill='rgba(6,78,59,.35)' stroke='#34d399'/>
+  <text x='520' y='1095' text-anchor='middle' class='label'>8. Main Execution Path</text>
+  <text x='290' y='1130' class='small'>Main frontier model (Hermes / Codex / Claude) receives:</text>
+  <text x='310' y='1155' class='small'>• original task</text>
+  <text x='310' y='1180' class='small'>• retrieved repo context</text>
+  <text x='310' y='1205' class='small'>• safe advisor advice</text>
+  <text x='290' y='1240' class='small'>Then performs actual reasoning, tool use, edits, tests, review.</text>
+
+  <rect x='900' y='1060' width='520' height='230' class='box' fill='rgba(76,29,149,.35)' stroke='#a78bfa'/>
+  <text x='1160' y='1095' text-anchor='middle' class='label'>9. Outcome Capture + Learning Loop</text>
+  <text x='930' y='1130' class='small'>After run completion:</text>
+  <text x='950' y='1155' class='small'>• store outcome status, retries, files touched, review verdict</text>
+  <text x='950' y='1180' class='small'>• compare advice vs actual winning path</text>
+  <text x='950' y='1205' class='small'>• append to supervised corpus for next advisor version</text>
+  <text x='930' y='1240' class='small'>Offline tuning can improve steering without retraining the main model.</text>
+
+  <path d='M510 310 L560 310' class='arrow'/>
+  <path d='M1080 310 L1130 310' class='arrow'/>
+  <path d='M1430 310 L1480 310' class='arrow dash'/>
+  <path d='M820 510 L820 630' class='arrow'/>
+  <path d='M1280 430 L1175 630' class='arrow'/>
+  <path d='M890 780 L960 780' class='arrow'/>
+  <path d='M1390 780 L1460 780' class='arrow'/>
+  <path d='M1590 930 L1590 990 L520 990 L520 1060' class='arrow'/>
+  <path d='M520 1290 L900 1290' class='arrow'/>
+  <path d='M1160 1060 L1160 950 L655 950 L655 930' class='arrow dash'/>
+
+  <rect x='80' y='1325' width='1640' height='55' class='box' fill='rgba(30,41,59,.18)' stroke='#475569'/>
+  <text x='900' y='1358' text-anchor='middle' class='small'>v1 principle: simple local MLX advisor service + SQLite trace store + JSON advice contract. Keep embeddings optional and training offline.</text>
+</svg>
+</body>
+</html>

@@ -1,0 +1,57 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local runtime data
+advisor.db
+*.sqlite
+*.sqlite3
+out/
+logs/
+.tmp/
+tmp/
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Test artifacts
+.cache/
+
+# OS / misc
+Thumbs.db

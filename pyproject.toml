@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "advisor"
+version = "0.1.0"
+description = "Extracted local advisor/steering module"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "pydantic>=2.12.5,<3",
+  "fastapi>=0.104.0,<1",
+]
+
+[project.optional-dependencies]
+advisor = [
+  "mlx>=0.31.0,<1",
+  "mlx-lm>=0.31.0,<1",
+  "uvicorn[standard]>=0.24.0,<1",
+]
+dev = [
+  "pytest>=9.0.2,<10",
+]
+
+[tool.setuptools.packages.find]
+include = ["agent", "agent.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
