@@ -78,6 +78,8 @@ advisor version
 advisor serve --host 127.0.0.1 --port 8000
 advisor operator-overview
 advisor deployment-profile --mode hosted
+advisor hardening-profile --mode hosted
+advisor export-bundle --output-dir ./bundle
 ```
 
 Current repo status:
@@ -97,6 +99,7 @@ Current repo status:
 - Phase 14 adds persisted training manifests, checkpoint registry lifecycle, and benchmark-driven promotion/rollback decisions
 - Phase 15 adds operator deployment profiles, run inspection endpoints, persistent background job queueing/resume, and retention enforcement with archival rotation
 - Phase 16 adds a paper-faithful results-pass layer with canonical study summaries, ablation/transfer reporting, failure taxonomy, provenance coverage, and explicit paper-divergence reporting
+- Phase 17 adds finished-product hardening with release gates, auth/tenancy/isolation profiles, backup/import-export bundle paths, alert summaries, and locked truth-surface contract versions
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing
