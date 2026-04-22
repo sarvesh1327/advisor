@@ -1,5 +1,12 @@
 from agent.advisor.metrics import summarize_runs
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RelevantFile, RepoSummary
+from agent.advisor.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorOutcome,
+    CandidateFile,
+    RelevantFile,
+    RepoSummary,
+)
 from agent.advisor.trace_store import AdvisorTraceStore
 
 

@@ -3,7 +3,6 @@ from agent.advisor.runtime_mlx import MLXAdvisorRuntime
 from agent.advisor.settings import AdvisorSettings
 
 
-
 def test_runtime_raises_clear_error_when_mlx_lm_unavailable(monkeypatch):
     monkeypatch.setattr(runtime_mlx, "mlx_lm_load", None)
     monkeypatch.setattr(runtime_mlx, "mlx_lm_generate", None)
