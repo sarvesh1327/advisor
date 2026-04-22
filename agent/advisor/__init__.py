@@ -1,7 +1,14 @@
 """Public package surface for the standalone Advisor product."""
 
 from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
-from .benchmark import BenchmarkCase, BenchmarkRunManifest, BenchmarkSuite, build_benchmark_run_manifest, compare_benchmark_arms, freeze_benchmark_suite
+from .benchmark import (
+    BenchmarkCase,
+    BenchmarkRunManifest,
+    BenchmarkSuite,
+    build_benchmark_run_manifest,
+    compare_benchmark_arms,
+    freeze_benchmark_suite,
+)
 from .gateway import AdvisorGateway
 from .integrations import (
     BuildTestCommandVerifier,
@@ -13,7 +20,13 @@ from .integrations import (
     RubricTextVerifier,
     ScreenshotHashVerifier,
 )
-from .observability import LiveMetricsSnapshot, RunEventLogger, build_audit_report, export_live_metrics, redact_packet
+from .observability import (
+    LiveMetricsSnapshot,
+    RunEventLogger,
+    build_audit_report,
+    export_live_metrics,
+    redact_packet,
+)
 from .orchestration import (
     AdvisorOrchestrator,
     BuildTestVerifier,
@@ -33,6 +46,13 @@ from .schemas import (
     AdvisorTaskRunResult,
 )
 from .settings import AdvisorSettings
+from .training_runtime import (
+    CheckpointLifecycleManager,
+    TrainingCheckpointRecord,
+    TrainingJobConfig,
+    TrainingJobResult,
+    evaluate_trained_checkpoint,
+)
 from .version import __version__
 
 # Keep __all__ narrow so external callers depend on stable entrypoints only.
@@ -51,6 +71,7 @@ __all__ = [
     "BenchmarkSuite",
     "BuildTestCommandVerifier",
     "BuildTestVerifier",
+    "CheckpointLifecycleManager",
     "CodingAgentExecutor",
     "CodingAgentSubprocessExecutor",
     "DeterministicABRouter",
@@ -63,19 +84,23 @@ __all__ = [
     "IntegrationRegistry",
     "LiveMetricsSnapshot",
     "RubricVerifier",
-    "RunEventLogger",
     "RubricTextVerifier",
+    "RunEventLogger",
     "ScreenshotComparisonVerifier",
     "ScreenshotHashVerifier",
+    "TrainingCheckpointRecord",
+    "TrainingJobConfig",
+    "TrainingJobResult",
     "build_audit_report",
     "build_benchmark_run_manifest",
     "compare_benchmark_arms",
     "create_gateway",
     "create_http_app",
     "create_orchestrator",
+    "evaluate_trained_checkpoint",
     "export_live_metrics",
     "freeze_benchmark_suite",
     "get_version",
     "redact_packet",
     "run_task",
- ]
+]
