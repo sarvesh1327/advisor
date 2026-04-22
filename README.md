@@ -89,6 +89,7 @@ Current repo status:
 - inference runtime now supports retries, timeout handling, warm-load, and fallback behavior
 - reward weights now support named config presets (`balanced`, `conservative`, `human-first`) plus explicit overrides
 - Phase 10 orchestration now supports executor/verifier plug-ins, deterministic A/B routing, replayable manifests, and optional second-pass review
+- Phase 11 adds redacted packet exports, structured run-event logs, live metrics export, and audit reporting
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing

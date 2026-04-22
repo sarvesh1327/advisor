@@ -48,6 +48,10 @@ class AdvisorSettings(BaseModel):
     enable_fallback_runtime: bool = True
     reward_preset: str = "balanced"
     reward_weights_config: dict[str, float] = Field(default_factory=dict, alias="reward_weights")
+    retention_days: int = 30
+    event_log_path: str = str(get_default_advisor_home() / "events.jsonl")
+    redact_sensitive_fields: bool = True
+    hosted_mode: bool = False
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "AdvisorSettings":
@@ -67,6 +71,8 @@ class AdvisorSettings(BaseModel):
             raise ValueError("max_retries must be >= 0")
         if self.inference_timeout_seconds <= 0:
             raise ValueError("inference_timeout_seconds must be > 0")
+        if self.retention_days <= 0:
+            raise ValueError("retention_days must be > 0")
         if self.reward_preset not in self.reward_presets():
             raise ValueError(f"reward_preset must be one of {sorted(self.reward_presets())}")
         for name, value in self.reward_weights_config.items():
@@ -158,6 +164,11 @@ class AdvisorSettings(BaseModel):
             in {"1", "true", "yes", "on"},
             reward_preset=os.getenv("ADVISOR_REWARD_PRESET", "balanced"),
             reward_weights=reward_weights,
+            retention_days=int(os.getenv("ADVISOR_RETENTION_DAYS", "30")),
+            event_log_path=os.getenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "events.jsonl")),
+            redact_sensitive_fields=os.getenv("ADVISOR_REDACT_SENSITIVE_FIELDS", "1").lower()
+            in {"1", "true", "yes", "on"},
+            hosted_mode=os.getenv("ADVISOR_HOSTED_MODE", "0").lower() in {"1", "true", "yes", "on"},
         )
 
     @classmethod
@@ -175,6 +186,7 @@ class AdvisorSettings(BaseModel):
 
     def ensure_dirs(self) -> None:
         Path(self.trace_db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+        Path(self.event_log_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
     def health_payload(self) -> dict:
         # Health payloads intentionally expose runtime knobs so startup issues are easy to diagnose.
@@ -194,4 +206,8 @@ class AdvisorSettings(BaseModel):
             "enable_fallback_runtime": self.enable_fallback_runtime,
             "reward_preset": self.reward_preset,
             "reward_weights": self.reward_weights().__dict__,
+            "retention_days": self.retention_days,
+            "event_log_path": self.event_log_path,
+            "redact_sensitive_fields": self.redact_sensitive_fields,
+            "hosted_mode": self.hosted_mode,
         }
