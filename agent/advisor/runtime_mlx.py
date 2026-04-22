@@ -88,9 +88,9 @@ class MLXAdvisorRuntime:
             model, tokenizer = self._ensure_loaded()
             if mlx_lm_generate is None or mlx_make_sampler is None:
                 raise RuntimeError(_MLX_MISSING_REASON)
-        except RuntimeError:
+        except Exception as exc:
             if self.settings.enable_fallback_runtime:
-                return self._heuristic_fallback(packet, reason=_MLX_MISSING_REASON)
+                return self._heuristic_fallback(packet, reason=str(exc))
             raise
 
         prompt = tokenizer.apply_chat_template(
@@ -140,13 +140,20 @@ class MLXAdvisorRuntime:
                 verbose=False,
             )
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_run_generate)
-            try:
-                return future.result(timeout=self.settings.inference_timeout_seconds)
-            except FutureTimeoutError as exc:
-                future.cancel()
-                raise TimeoutError("generation exceeded timeout") from exc
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_run_generate)
+        try:
+            result = future.result(timeout=self.settings.inference_timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise TimeoutError("generation exceeded timeout") from exc
+        except Exception:
+            executor.shutdown(wait=True, cancel_futures=False)
+            raise
+
+        executor.shutdown(wait=True, cancel_futures=False)
+        return result
 
     def _heuristic_fallback(self, packet, *, reason: str) -> AdviceBlock:
         top_file = packet.candidate_files[0].path if packet.candidate_files else None

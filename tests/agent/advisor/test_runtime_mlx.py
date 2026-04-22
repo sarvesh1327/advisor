@@ -100,6 +100,51 @@ def test_runtime_raises_timeout_error_when_generation_exceeds_limit(monkeypatch)
 
 
 
+def test_runtime_timeout_does_not_wait_for_executor_shutdown(monkeypatch):
+    calls = {}
+
+    class FakeFuture:
+        def result(self, timeout):
+            calls["timeout"] = timeout
+            raise runtime_mlx.FutureTimeoutError()
+
+        def cancel(self):
+            calls["cancelled"] = True
+            return False
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            calls["max_workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.shutdown()
+            return False
+
+        def submit(self, fn):
+            calls["submitted"] = True
+            return FakeFuture()
+
+        def shutdown(self, wait=True, cancel_futures=False):
+            calls["shutdown"] = (wait, cancel_futures)
+
+    monkeypatch.setattr(runtime_mlx, "ThreadPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_generate", lambda *_args, **_kwargs: "never returned")
+    monkeypatch.setattr(runtime_mlx, "mlx_make_sampler", lambda temp: {"temp": temp})
+
+    runtime = MLXAdvisorRuntime(AdvisorSettings(inference_timeout_seconds=3))
+
+    with pytest.raises(TimeoutError, match="generation exceeded timeout"):
+        runtime._generate_response(SimpleNamespace(), StubTokenizer(), "prompt")
+
+    assert calls["timeout"] == 3
+    assert calls["cancelled"] is True
+    assert calls["shutdown"] == (False, True)
+
+
+
 def test_runtime_warmup_marks_runtime_ready(monkeypatch):
     monkeypatch.setattr(runtime_mlx, "mlx_lm_load", lambda _model_name: (SimpleNamespace(), StubTokenizer()))
 
@@ -144,3 +189,20 @@ def test_runtime_returns_heuristic_fallback_advice_when_enabled(monkeypatch):
     assert advice.task_type == "bugfix"
     assert "main.py" in advice.recommended_plan[0]
     assert advice.notes is not None
+
+
+
+def test_runtime_returns_heuristic_fallback_for_non_runtime_load_errors(monkeypatch):
+    def fake_load(_model_name):
+        raise OSError("model files missing")
+
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_load", fake_load)
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_generate", lambda *_args, **_kwargs: "unused")
+    monkeypatch.setattr(runtime_mlx, "mlx_make_sampler", lambda temp: {"temp": temp})
+
+    runtime = MLXAdvisorRuntime(AdvisorSettings(enable_fallback_runtime=True))
+    advice = runtime.generate_advice(_packet())
+
+    assert advice.task_type == "bugfix"
+    assert advice.notes is not None
+    assert "model files missing" in advice.notes
