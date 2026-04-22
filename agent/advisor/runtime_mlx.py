@@ -10,6 +10,7 @@ from .schemas import AdviceBlock
 from .settings import AdvisorSettings
 
 try:
+    # MLX stays optional so the module can still import in fallback-only or test environments.
     from mlx_lm import generate as mlx_lm_generate
     from mlx_lm import load as mlx_lm_load
     from mlx_lm.sample_utils import make_sampler as mlx_make_sampler
@@ -36,6 +37,7 @@ class MLXAdvisorRuntime:
         return sha256(seed.encode()).hexdigest()
 
     def capabilities(self) -> dict:
+        # Availability means "can answer somehow"; readiness means the primary runtime is already loaded.
         available = (
             mlx_lm_load is not None
             and mlx_lm_generate is not None
@@ -77,6 +79,7 @@ class MLXAdvisorRuntime:
             self._model, self._tokenizer = mlx_lm_load(self.settings.model_name)
             self._active_model_name = self.settings.model_name
         except Exception:
+            # Fallback model loading is only for degraded continuity, not silent model switching.
             if not self.settings.fallback_model_name:
                 raise
             self._model, self._tokenizer = mlx_lm_load(self.settings.fallback_model_name)
@@ -102,6 +105,7 @@ class MLXAdvisorRuntime:
                 payload = self._coerce_payload(self._extract_json(response))
                 return AdviceBlock.model_validate(payload)
             except (json.JSONDecodeError, TimeoutError, ValueError) as exc:
+                # Retry only malformed or timeout-style failures; other exceptions escape earlier.
                 last_error = exc
 
         if self.settings.enable_fallback_runtime:
@@ -144,6 +148,7 @@ class MLXAdvisorRuntime:
         try:
             result = future.result(timeout=self.settings.inference_timeout_seconds)
         except FutureTimeoutError as exc:
+            # Do not wait on shutdown here or the timeout path defeats its own latency bound.
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
             raise TimeoutError("generation exceeded timeout") from exc
@@ -155,6 +160,7 @@ class MLXAdvisorRuntime:
         return result
 
     def _heuristic_fallback(self, packet, *, reason: str) -> AdviceBlock:
+        # Keep fallback advice deterministic and minimal so it is clearly weaker than model output.
         top_file = packet.candidate_files[0].path if packet.candidate_files else None
         recommended_plan = []
         if top_file:
@@ -178,6 +184,7 @@ class MLXAdvisorRuntime:
         )
 
     def _format_prompt(self, packet) -> str:
+        # The prompt still carries coding-oriented fields until domain adapters are split out.
         json_template = (
             '{"task_type": "feature", "relevant_files": [{"path": "src/app/page.tsx", '
             '"why": "landing page entrypoint", "priority": 1}], "relevant_symbols": [], '
@@ -224,6 +231,7 @@ class MLXAdvisorRuntime:
 
     def _coerce_payload(self, payload: dict) -> dict:
         def _to_strings(items):
+            # Normalize loose model output into the strict schema without discarding useful intent.
             if isinstance(items, str):
                 items = [items]
             out = []

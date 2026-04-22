@@ -8,6 +8,7 @@ from pydantic import BaseModel, model_validator
 
 
 def get_default_advisor_home() -> Path:
+    # Prefer explicit app state dirs so hosted or multi-profile setups stay relocatable.
     explicit_home = os.getenv("ADVISOR_HOME")
     if explicit_home:
         return Path(explicit_home).expanduser()
@@ -20,6 +21,7 @@ def get_default_advisor_home() -> Path:
 
 
 class AdvisorSettings(BaseModel):
+    # Defaults describe the standalone local runtime; callers can override through TOML or env.
     enabled: bool = False
     trace_db_path: str = str(get_default_advisor_home() / "advisor.db")
     model_name: str = "mlx-community/Qwen2.5-3B-Instruct-4bit"
@@ -97,6 +99,7 @@ class AdvisorSettings(BaseModel):
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> "AdvisorSettings":
+        # Explicit config wins; env remains the zero-config fallback.
         explicit_path = config_path or os.getenv("ADVISOR_CONFIG")
         if explicit_path:
             return cls.from_toml(explicit_path)
@@ -106,6 +109,7 @@ class AdvisorSettings(BaseModel):
         Path(self.trace_db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
     def health_payload(self) -> dict:
+        # Health payloads intentionally expose runtime knobs so startup issues are easy to diagnose.
         return {
             "valid": True,
             "enabled": self.enabled,

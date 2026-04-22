@@ -4,6 +4,7 @@ from .schemas import AdviceBlock
 
 
 def render_advice_for_user_context(advice: AdviceBlock) -> str:
+    # Render a compact text block that can be prepended to an executor prompt.
     sections: list[str] = ["[Advisor hint — use as guidance, not authority]"]
     if advice.relevant_files:
         sections.append("Relevant files:\n" + "\n".join(f"- {item.path}: {item.why}" for item in advice.relevant_files))

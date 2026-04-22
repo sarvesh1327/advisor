@@ -21,6 +21,7 @@ class AdvisorTraceStore:
 
     def _init_db(self) -> None:
         with self._connect() as conn:
+            # Keep schema creation idempotent so local startup never depends on migration tooling.
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -125,6 +126,7 @@ class AdvisorTraceStore:
                     packet.token_budget,
                 ),
             )
+            # Advice is stored after validation so downstream exports only see normalized output.
             conn.execute(
                 """
                 INSERT OR REPLACE INTO advice_records(run_id, advisor_model, prompt_hash, advice_json, latency_ms, validated)
@@ -162,6 +164,7 @@ class AdvisorTraceStore:
                 ),
             )
             if outcome.status != "success":
+                # Failure signatures feed the lightweight failure-memory path in context building.
                 signature = outcome.summary or "unknown failure"
                 existing = conn.execute(
                     "SELECT pattern_id, frequency FROM failure_patterns WHERE signature = ?",
@@ -232,6 +235,7 @@ class AdvisorTraceStore:
             } if row["status"] else None,
         }
         if include_context:
+            # Rehydrate through the schema so replayed runs get the same backfilled generic fields.
             packet = AdvisorInputPacket(
                 run_id=row["run_id"],
                 task_text=row["task_text"],
@@ -249,6 +253,7 @@ class AdvisorTraceStore:
         return result
 
     def find_recent_failures(self, task_text: str, repo_path: str, limit: int = 5) -> list[FailureSignal]:
+        # Token overlap is crude but cheap; this is a placeholder retrieval path until richer replay indexing exists.
         tokens = [tok.lower() for tok in task_text.split() if len(tok) >= 4][:6]
         clauses = []
         params: list[str] = [repo_path]

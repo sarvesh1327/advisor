@@ -13,6 +13,7 @@ def export_training_examples(store: AdvisorTraceStore, output_path: str | Path, 
     with output.open("w", encoding="utf-8") as fh:
         for row in store.list_runs(include_context=True):
             outcome = row.get("outcome") or {}
+            # Successful runs are the current high-precision source for supervised advice targets.
             if outcome.get("status") != "success":
                 continue
             payload = {

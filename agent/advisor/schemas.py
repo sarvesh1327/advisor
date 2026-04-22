@@ -37,17 +37,20 @@ class RelevantSymbol(BaseModel):
 
 
 class AdvisorTask(BaseModel):
+    # Core task identity used across all domain adapters.
     domain: str = "coding"
     text: str
     type: str
 
 
 class AdvisorContext(BaseModel):
+    # Adapter-specific metadata stays here so the core packet remains generic.
     summary: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdvisorArtifact(BaseModel):
+    # Artifacts are domain-neutral focus targets: files, screenshots, docs, etc.
     kind: str
     locator: str
     description: str | None = None
@@ -56,6 +59,7 @@ class AdvisorArtifact(BaseModel):
 
 
 class AdvisorHistoryEntry(BaseModel):
+    # History entries preserve prior signals without assuming coding-only failures.
     kind: str
     summary: str
     locator: str | None = None
@@ -95,6 +99,7 @@ class AdvisorInputPacket(BaseModel):
 
     @model_validator(mode="after")
     def populate_generic_fields(self) -> "AdvisorInputPacket":
+        # Backfill the generic packet shape from legacy coding fields during migration.
         if self.task is None:
             self.task = AdvisorTask(domain="coding", text=self.task_text, type=self.task_type)
         if self.context is None:

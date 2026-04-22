@@ -30,6 +30,7 @@ class AdvisorGateway:
         self.settings = settings or AdvisorSettings.load()
         self.settings.ensure_dirs()
         self.trace_store = trace_store or AdvisorTraceStore(self.settings.trace_db_path)
+        # Gateway owns the canonical task-run pipeline used by CLI, API, and tests.
         self.context_builder = ContextBuilder(
             self.trace_store,
             max_tree_entries=self.settings.max_tree_entries,
@@ -44,6 +45,7 @@ class AdvisorGateway:
             warmup()
 
     def system_health(self) -> dict:
+        # Health is capability-oriented so callers can distinguish missing runtime vs. bad startup.
         runtime_caps_fn = getattr(self.runtime, "capabilities", None)
         runtime_health = runtime_caps_fn() if callable(runtime_caps_fn) else {
             "runtime": type(self.runtime).__name__,
@@ -86,6 +88,7 @@ class AdvisorGateway:
         packet.repo["task_id"] = task_id
         started = time.perf_counter()
         generate_advice = self.runtime.generate_advice
+        # Older runtimes may not support prompt overrides yet; keep the interface backward-compatible.
         supports_system_prompt = "system_prompt" in inspect.signature(generate_advice).parameters
         if supports_system_prompt:
             advice = generate_advice(packet, system_prompt=system_prompt)
@@ -93,6 +96,7 @@ class AdvisorGateway:
             advice = generate_advice(packet)
         latency_ms = int((time.perf_counter() - started) * 1000)
         safe_advice = self.validator.validate(advice)
+        # Prompt hash tracks the effective task/model pair used for the stored advice record.
         prompt_hash = sha256(
             (packet.task_text + self.settings.model_version).encode()
         ).hexdigest()
@@ -122,6 +126,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     gateway = AdvisorGateway(settings=settings, runtime=runtime)
     app = FastAPI(title="Advisor", version=__version__)
 
+    # Keep HTTP routes thin; the gateway should remain the single source of execution behavior.
     @app.get("/healthz")
     def healthz():
         return gateway.system_health()
