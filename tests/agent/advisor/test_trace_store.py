@@ -1,4 +1,10 @@
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
+from agent.advisor.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorOutcome,
+    CandidateFile,
+    RepoSummary,
+)
 from agent.advisor.trace_store import AdvisorTraceStore
 
 

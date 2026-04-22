@@ -1,6 +1,11 @@
-import pytest
 
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, FailureSignal, RepoSummary
+from agent.advisor.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    CandidateFile,
+    FailureSignal,
+    RepoSummary,
+)
 
 
 def test_advice_block_defaults():

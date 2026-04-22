@@ -1,7 +1,13 @@
 import json
 
 from agent.advisor import cli
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorTaskRunResult, CandidateFile, RepoSummary
+from agent.advisor.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorTaskRunResult,
+    CandidateFile,
+    RepoSummary,
+)
 
 
 class StubGateway:

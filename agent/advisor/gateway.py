@@ -6,12 +6,12 @@ from hashlib import sha256
 from typing import Any
 
 from .context_builder import ContextBuilder
-from .version import __version__
 from .runtime_mlx import MLXAdvisorRuntime
 from .schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from .settings import AdvisorSettings
 from .trace_store import AdvisorTraceStore
 from .validator import AdviceValidator
+from .version import __version__
 
 try:
     from fastapi import FastAPI

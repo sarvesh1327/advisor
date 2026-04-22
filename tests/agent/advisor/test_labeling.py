@@ -1,7 +1,13 @@
 import json
 
 from agent.advisor.labeling import export_training_examples
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
+from agent.advisor.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorOutcome,
+    CandidateFile,
+    RepoSummary,
+)
 from agent.advisor.trace_store import AdvisorTraceStore
 
 

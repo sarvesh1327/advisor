@@ -25,7 +25,19 @@ advisor = [
 ]
 dev = [
   "pytest>=9.0.2,<10",
+  "ruff>=0.8.0,<1",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 180
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.setuptools.packages.find]
 include = ["agent", "agent.*"]

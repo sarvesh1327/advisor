@@ -5,7 +5,6 @@ import pytest
 from agent.advisor.settings import AdvisorSettings, get_default_advisor_home
 
 
-
 def test_get_default_advisor_home_prefers_explicit_env(monkeypatch, tmp_path):
     custom_home = tmp_path / "advisor-home"
     monkeypatch.setenv("ADVISOR_HOME", str(custom_home))

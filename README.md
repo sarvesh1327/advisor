@@ -87,6 +87,12 @@ Current repo status:
 - no Hermes-specific Python references remain in this repo
 - config can now load from `ADVISOR_CONFIG=/path/to/advisor.toml`
 - health checks now expose runtime/config state on `/healthz`
+- CI workflow tests Python 3.11 and 3.12
+- Ruff linting is configured and passes locally
+
+## Contributing
+
+See `CONTRIBUTING.md` for local setup, test, and lint workflow.
 
 ## Helper scripts
 

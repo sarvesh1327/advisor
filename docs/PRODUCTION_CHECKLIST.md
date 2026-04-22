@@ -17,11 +17,11 @@ This is the working checklist for turning Advisor from a clean extracted prototy
 - [x] Add health/startup checks for model/runtime state
 
 ## Phase 3 — Packaging and repo hygiene
-- [ ] Add CI for tests
-- [ ] Add lint/format config
-- [ ] Add CONTRIBUTING.md
-- [ ] Add release workflow
-- [ ] Pin/test supported Python versions
+- [x] Add CI for tests
+- [x] Add lint/format config
+- [x] Add CONTRIBUTING.md
+- [x] Add release workflow
+- [x] Pin/test supported Python versions
 
 ## Phase 4 — Inference robustness
 - [ ] Add timeout handling
