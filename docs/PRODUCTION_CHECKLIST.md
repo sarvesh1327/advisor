@@ -125,10 +125,10 @@ Core rule:
 - [x] Add ablation-friendly benchmark reporting
 
 ## Phase 14 — Real training loop and checkpoint lifecycle
-- [ ] Train at least one real advisor checkpoint from repo-generated data
-- [ ] Evaluate checkpoints against frozen replay/benchmark suites
-- [ ] Add checkpoint promotion / rollback based on benchmark outcomes
-- [ ] Persist exact experiment manifests for each training run
+- [x] Train at least one real advisor checkpoint from repo-generated data
+- [x] Evaluate checkpoints against frozen replay/benchmark suites
+- [x] Add checkpoint promotion / rollback based on benchmark outcomes
+- [x] Persist exact experiment manifests for each training run
 
 ## Phase 15 — Operator surface and deployment path
 - [ ] Add deployable single-tenant and hosted/service operating paths

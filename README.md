@@ -92,6 +92,7 @@ Current repo status:
 - Phase 11 adds redacted packet exports, structured run-event logs, live metrics export, and audit reporting
 - Phase 12 adds real HTTP/subprocess executor integrations, real verifier adapters, integration registry construction, and parity-tested baseline vs advisor-assisted execution
 - Phase 13 adds frozen benchmark suites, benchmark run manifests, deterministic baseline-vs-advisor summaries, and ablation-friendly reporting
+- Phase 14 adds persisted training manifests, checkpoint registry lifecycle, and benchmark-driven promotion/rollback decisions
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing
