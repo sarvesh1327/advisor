@@ -28,6 +28,11 @@ def test_create_http_app_includes_health_route(tmp_path):
     routes = {route.path for route in app.routes}
     assert "/healthz" in routes
     assert "/v1/advisor/task-run" in routes
+    assert "/v1/operator/overview" in routes
+    assert "/v1/operator/runs/{run_id}" in routes
+    assert "/v1/operator/jobs" in routes
+    assert "/v1/operator/jobs/{job_id}/resume" in routes
+    assert "/v1/operator/retention/enforce" in routes
 
 
 def test_get_version_returns_repo_version():

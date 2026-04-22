@@ -320,12 +320,33 @@ class AdvisorTraceStore:
             ).fetchall()
         return [self._row_to_run_dict(row, include_context=include_context) for row in rows]
 
+    def delete_runs(self, run_ids: list[str]) -> int:
+        if not run_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in run_ids)
+        with self._connect() as conn:
+            for table_name in (
+                "training_examples",
+                "run_lineages",
+                "reward_labels",
+                "run_outcomes",
+                "advice_records",
+                "run_contexts",
+                "runs",
+            ):
+                conn.execute(f"DELETE FROM {table_name} WHERE run_id IN ({placeholders})", run_ids)
+        return len(run_ids)
+
     def _row_to_run_dict(self, row: sqlite3.Row, *, include_context: bool) -> dict:
         result = {
             "run_id": row["run_id"],
+            "started_at": row["started_at"],
             "task_text": row["task_text"],
             "task_type": row["task_type"],
             "repo_path": row["repo_path"],
+            "branch": row["branch"],
+            "session_id": row["session_id"],
+            "task_id": row["task_id"],
             "advice": json.loads(row["advice_json"]) if row["advice_json"] else None,
             "injected_advice": json.loads(row["injected_advice_json"]) if row["injected_advice_json"] else None,
             "injected_rendered_advice": row["injected_rendered_advice"],

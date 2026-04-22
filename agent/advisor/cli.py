@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from .api import create_gateway, create_http_app, get_version
+from .operator_runtime import OperatorJobQueue, RetentionEnforcer, build_deployment_profile, build_operator_snapshot
+from .settings import AdvisorSettings
 
 try:
     from uvicorn import run as uvicorn_run
@@ -33,6 +36,16 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     serve_parser.add_argument("--port", type=int, default=8000, help="Bind port")
     serve_parser.set_defaults(handler=_handle_serve)
+
+    operator_parser = subparsers.add_parser("operator-overview", help="Print operator overview JSON")
+    operator_parser.set_defaults(handler=_handle_operator_overview)
+
+    retention_parser = subparsers.add_parser("retention-enforce", help="Archive and prune retained runs/events")
+    retention_parser.set_defaults(handler=_handle_retention_enforce)
+
+    deployment_parser = subparsers.add_parser("deployment-profile", help="Print deployment profile guidance")
+    deployment_parser.add_argument("--mode", choices=["single_tenant", "hosted"], default=None, help="Deployment mode override")
+    deployment_parser.set_defaults(handler=_handle_deployment_profile)
 
     return parser
 
@@ -70,6 +83,44 @@ def _handle_serve(args) -> int:
         raise RuntimeError("uvicorn is not installed. Install the advisor runtime extras to use 'advisor serve'.")
     app = create_http_app()
     uvicorn_run(app, host=args.host, port=args.port)
+    return 0
+
+
+def _handle_operator_overview(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    gateway = create_gateway(settings=settings)
+    deployment = build_deployment_profile(
+        settings=settings,
+        mode="hosted" if settings.hosted_mode else "single_tenant",
+    )
+    queue = OperatorJobQueue(Path(settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
+    snapshot = build_operator_snapshot(
+        store=gateway.trace_store,
+        settings=settings,
+        deployment=deployment,
+        job_records=queue.list_jobs(),
+    )
+    print(json.dumps(snapshot, ensure_ascii=False))
+    return 0
+
+
+def _handle_retention_enforce(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    gateway = create_gateway(settings=settings)
+    report = RetentionEnforcer(store=gateway.trace_store, settings=settings).enforce()
+    print(json.dumps(report, ensure_ascii=False))
+    return 0
+
+
+def _handle_deployment_profile(args) -> int:
+    settings = AdvisorSettings.load()
+    profile = build_deployment_profile(
+        settings=settings,
+        mode=args.mode or ("hosted" if settings.hosted_mode else "single_tenant"),
+    )
+    print(json.dumps(profile.model_dump(), ensure_ascii=False))
     return 0
 
 
