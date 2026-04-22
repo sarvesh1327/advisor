@@ -39,8 +39,8 @@ This repo contains the advisor module itself, not the full Hermes runtime.
 - architecture docs copied from the earlier design work
 
 ## What this repo does not include
-- CLI/product wiring
-- complete standalone packaging/runtime polish
+- full auth/tenancy hardening for multi-tenant service use
+- paper-faithful final results reporting
 
 ## Quick start
 
@@ -76,6 +76,8 @@ Check the installed CLI:
 ```bash
 advisor version
 advisor serve --host 127.0.0.1 --port 8000
+advisor operator-overview
+advisor deployment-profile --mode hosted
 ```
 
 Current repo status:
@@ -93,6 +95,7 @@ Current repo status:
 - Phase 12 adds real HTTP/subprocess executor integrations, real verifier adapters, integration registry construction, and parity-tested baseline vs advisor-assisted execution
 - Phase 13 adds frozen benchmark suites, benchmark run manifests, deterministic baseline-vs-advisor summaries, and ablation-friendly reporting
 - Phase 14 adds persisted training manifests, checkpoint registry lifecycle, and benchmark-driven promotion/rollback decisions
+- Phase 15 adds operator deployment profiles, run inspection endpoints, persistent background job queueing/resume, and retention enforcement with archival rotation
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing

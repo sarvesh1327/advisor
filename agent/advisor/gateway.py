@@ -4,10 +4,18 @@ import inspect
 import time
 import uuid
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 from .context_builder import ContextBuilder
 from .injector import render_advice_for_user_context
+from .operator_runtime import (
+    OperatorJobQueue,
+    OperatorJobRequest,
+    RetentionEnforcer,
+    build_deployment_profile,
+    build_operator_snapshot,
+)
 from .runtime_mlx import MLXAdvisorRuntime
 from .schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from .settings import AdvisorSettings
@@ -130,6 +138,13 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
         )
 
     gateway = AdvisorGateway(settings=settings, runtime=runtime)
+    active_settings = gateway.settings
+    operator_queue = OperatorJobQueue(Path(active_settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
+    deployment = build_deployment_profile(
+        settings=active_settings,
+        mode="hosted" if active_settings.hosted_mode else "single_tenant",
+    )
+    retention = RetentionEnforcer(store=gateway.trace_store, settings=active_settings)
     app = FastAPI(title="Advisor", version=__version__)
 
     # Keep HTTP routes thin; the gateway should remain the single source of execution behavior.
@@ -151,5 +166,45 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             system_prompt=req.system_prompt,
             changed_files=req.changed_files,
         )
+
+    @app.get("/v1/operator/overview")
+    def operator_overview():
+        return build_operator_snapshot(
+            store=gateway.trace_store,
+            settings=active_settings,
+            deployment=deployment,
+            job_records=operator_queue.list_jobs(),
+        )
+
+    @app.get("/v1/operator/runs/{run_id}")
+    def operator_run_details(run_id: str):
+        run = gateway.trace_store.get_run(run_id)
+        if run is None:
+            return {"run": None, "lineage": None}
+        return {"run": run, "lineage": gateway.trace_store.get_lineage(run_id)}
+
+    @app.get("/v1/operator/jobs")
+    def operator_jobs():
+        return [item.model_dump() for item in operator_queue.list_jobs()]
+
+    @app.post("/v1/operator/jobs")
+    def operator_enqueue_job(req: OperatorJobRequest):
+        return operator_queue.enqueue_job(
+            job_type=req.job_type,
+            payload=req.payload,
+            resume_token=req.resume_token,
+        ).model_dump()
+
+    @app.post("/v1/operator/jobs/{job_id}/resume")
+    def operator_resume_job(job_id: str):
+        resumed = [item for item in operator_queue.resume_incomplete_jobs() if item.job_id == job_id]
+        if resumed:
+            return resumed[0].model_dump()
+        existing = [item for item in operator_queue.list_jobs() if item.job_id == job_id]
+        return existing[0].model_dump() if existing else {"job_id": job_id, "status": "missing"}
+
+    @app.post("/v1/operator/retention/enforce")
+    def operator_retention_enforce():
+        return retention.enforce()
 
     return app

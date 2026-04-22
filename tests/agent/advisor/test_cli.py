@@ -8,6 +8,8 @@ from agent.advisor.schemas import (
     CandidateFile,
     RepoSummary,
 )
+from agent.advisor.settings import AdvisorSettings
+from agent.advisor.trace_store import AdvisorTraceStore
 
 
 class StubGateway:
@@ -87,3 +89,34 @@ def test_cli_serve_invokes_uvicorn(monkeypatch):
     assert exit_code == 0
     assert calls["host"] == "127.0.0.1"
     assert calls["port"] == 9001
+
+
+def test_cli_operator_overview_prints_json(monkeypatch, tmp_path, capsys):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    store = AdvisorTraceStore(settings.trace_db_path)
+
+    class StubGatewayWithStore:
+        def __init__(self, trace_store):
+            self.trace_store = trace_store
+
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+    monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: StubGatewayWithStore(store))
+
+    exit_code = cli.main(["operator-overview"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["deployment"]["mode"] == "single_tenant"
+    assert payload["live_metrics"]["total_runs"] == 0
+
+
+def test_cli_deployment_profile_respects_mode_override(monkeypatch, tmp_path, capsys):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+
+    exit_code = cli.main(["deployment-profile", "--mode", "hosted"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["mode"] == "hosted"
+    assert payload["auth_boundary"] == "external auth proxy required"

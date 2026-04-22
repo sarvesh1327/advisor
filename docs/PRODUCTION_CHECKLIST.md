@@ -131,10 +131,10 @@ Core rule:
 - [x] Persist exact experiment manifests for each training run
 
 ## Phase 15 — Operator surface and deployment path
-- [ ] Add deployable single-tenant and hosted/service operating paths
-- [ ] Add run inspection / dashboard surface for lineage, rewards, failures, and benchmark summaries
-- [ ] Add background jobs, queueing, and resumability for long runs
-- [ ] Enforce retention / archival / rotation behavior operationally
+- [x] Add deployable single-tenant and hosted/service operating paths
+- [x] Add run inspection / dashboard surface for lineage, rewards, failures, and benchmark summaries
+- [x] Add background jobs, queueing, and resumability for long runs
+- [x] Enforce retention / archival / rotation behavior operationally
 
 ## Phase 16 — Paper-faithful results pass
 - [ ] Run canonical baseline vs advisor-assisted studies on frozen suites
