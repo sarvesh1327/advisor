@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from hashlib import sha256
 
 from .schemas import AdviceBlock
@@ -16,7 +18,9 @@ except ImportError:
     mlx_lm_load = None
     mlx_make_sampler = None
 
-_MLX_MISSING_REASON = "mlx-lm is not installed. Install the advisor runtime extras to enable MLX inference."
+_MLX_MISSING_REASON = (
+    "mlx-lm is not installed. Install the advisor runtime extras to enable MLX inference."
+)
 
 
 class MLXAdvisorRuntime:
@@ -24,22 +28,44 @@ class MLXAdvisorRuntime:
         self.settings = settings
         self._model = None
         self._tokenizer = None
+        self._active_model_name = settings.model_name
 
     @property
     def prompt_hash_seed(self) -> str:
-        return sha256(f"{self.settings.model_name}:{self.settings.model_version}".encode()).hexdigest()
+        seed = f"{self._active_model_name}:{self.settings.model_version}"
+        return sha256(seed.encode()).hexdigest()
 
     def capabilities(self) -> dict:
-        available = mlx_lm_load is not None and mlx_lm_generate is not None and mlx_make_sampler is not None
-        ready = available and self._model is not None and self._tokenizer is not None
+        available = (
+            mlx_lm_load is not None
+            and mlx_lm_generate is not None
+            and mlx_make_sampler is not None
+        ) or self.settings.enable_fallback_runtime
+        ready = (
+            (self._model is not None and self._tokenizer is not None)
+            or self.settings.enable_fallback_runtime
+        )
+        reason = None
+        if not available:
+            reason = _MLX_MISSING_REASON
+        elif self._model is None and self._tokenizer is None and self.settings.enable_fallback_runtime:
+            reason = "heuristic fallback runtime available"
         return {
             "runtime": "mlx",
             "available": available,
             "ready": ready,
-            "reason": None if available else _MLX_MISSING_REASON,
+            "reason": reason,
             "model_name": self.settings.model_name,
+            "active_model_name": self._active_model_name,
             "model_version": self.settings.model_version,
         }
+
+    def warmup(self) -> None:
+        try:
+            self._ensure_loaded()
+        except RuntimeError:
+            if not self.settings.enable_fallback_runtime:
+                raise
 
     def _ensure_loaded(self):
         if self._model is not None and self._tokenizer is not None:
@@ -47,13 +73,25 @@ class MLXAdvisorRuntime:
         if mlx_lm_load is None:
             raise RuntimeError(_MLX_MISSING_REASON)
 
-        self._model, self._tokenizer = mlx_lm_load(self.settings.model_name)
+        try:
+            self._model, self._tokenizer = mlx_lm_load(self.settings.model_name)
+            self._active_model_name = self.settings.model_name
+        except Exception:
+            if not self.settings.fallback_model_name:
+                raise
+            self._model, self._tokenizer = mlx_lm_load(self.settings.fallback_model_name)
+            self._active_model_name = self.settings.fallback_model_name
         return self._model, self._tokenizer
 
     def generate_advice(self, packet) -> AdviceBlock:
-        model, tokenizer = self._ensure_loaded()
-        if mlx_lm_generate is None or mlx_make_sampler is None:
-            raise RuntimeError(_MLX_MISSING_REASON)
+        try:
+            model, tokenizer = self._ensure_loaded()
+            if mlx_lm_generate is None or mlx_make_sampler is None:
+                raise RuntimeError(_MLX_MISSING_REASON)
+        except Exception as exc:
+            if self.settings.enable_fallback_runtime:
+                return self._heuristic_fallback(packet, reason=str(exc))
+            raise
 
         prompt = tokenizer.apply_chat_template(
             [
@@ -71,16 +109,74 @@ class MLXAdvisorRuntime:
             tokenize=False,
             add_generation_prompt=False,
         )
-        response = mlx_lm_generate(
-            model,
-            tokenizer,
-            prompt=prompt,
-            max_tokens=self.settings.max_tokens,
-            sampler=mlx_make_sampler(temp=self.settings.temperature),
-            verbose=False,
+
+        last_error: Exception | None = None
+        for _attempt in range(self.settings.max_retries + 1):
+            try:
+                response = self._generate_response(model, tokenizer, prompt)
+                payload = self._coerce_payload(self._extract_json(response))
+                return AdviceBlock.model_validate(payload)
+            except (json.JSONDecodeError, TimeoutError, ValueError) as exc:
+                last_error = exc
+
+        if self.settings.enable_fallback_runtime:
+            reason = str(last_error) if last_error else "generation failed"
+            return self._heuristic_fallback(packet, reason=reason)
+        if last_error:
+            raise last_error
+        raise RuntimeError("generation failed without a recoverable error")
+
+    def _generate_response(self, model, tokenizer, prompt: str) -> str:
+        if mlx_lm_generate is None or mlx_make_sampler is None:
+            raise RuntimeError(_MLX_MISSING_REASON)
+
+        def _run_generate():
+            return mlx_lm_generate(
+                model,
+                tokenizer,
+                prompt=prompt,
+                max_tokens=self.settings.max_tokens,
+                sampler=mlx_make_sampler(temp=self.settings.temperature),
+                verbose=False,
+            )
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_run_generate)
+        try:
+            result = future.result(timeout=self.settings.inference_timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise TimeoutError("generation exceeded timeout") from exc
+        except Exception:
+            executor.shutdown(wait=True, cancel_futures=False)
+            raise
+
+        executor.shutdown(wait=True, cancel_futures=False)
+        return result
+
+    def _heuristic_fallback(self, packet, *, reason: str) -> AdviceBlock:
+        top_file = packet.candidate_files[0].path if packet.candidate_files else None
+        recommended_plan = []
+        if top_file:
+            recommended_plan.append(f"inspect {top_file}")
+        recommended_plan.append("run a focused verification step")
+        relevant_files = []
+        if top_file:
+            relevant_files.append({"path": top_file, "why": "top candidate from repo scan", "priority": 1})
+        return AdviceBlock.model_validate(
+            {
+                "task_type": packet.task_type,
+                "relevant_files": relevant_files,
+                "relevant_symbols": [],
+                "constraints": packet.constraints,
+                "likely_failure_modes": [reason],
+                "recommended_plan": recommended_plan,
+                "avoid": ["broad refactors before confirming the failing area"],
+                "confidence": 0.35,
+                "notes": f"heuristic fallback runtime used: {reason}",
+            }
         )
-        payload = self._coerce_payload(self._extract_json(response))
-        return AdviceBlock.model_validate(payload)
 
     def _format_prompt(self, packet) -> str:
         return (
@@ -122,9 +218,17 @@ class MLXAdvisorRuntime:
                 if isinstance(item, str):
                     out.append(item)
                 elif isinstance(item, dict):
-                    action = item.get("action") or item.get("name") or item.get("path") or json.dumps(item, sort_keys=True)
+                    action = (
+                        item.get("action")
+                        or item.get("name")
+                        or item.get("path")
+                        or json.dumps(item, sort_keys=True)
+                    )
                     file_part = item.get("file") or item.get("path")
-                    out.append(f"{action} ({file_part})" if file_part and file_part not in action else str(action))
+                    if file_part and file_part not in action:
+                        out.append(f"{action} ({file_part})")
+                    else:
+                        out.append(str(action))
                 else:
                     out.append(str(item))
             return out
@@ -132,31 +236,49 @@ class MLXAdvisorRuntime:
         relevant_files = []
         for idx, item in enumerate(payload.get("relevant_files") or [], start=1):
             if isinstance(item, str):
-                relevant_files.append({"path": item, "why": "advisor-selected relevant file", "priority": idx})
+                relevant_files.append(
+                    {
+                        "path": item,
+                        "why": "advisor-selected relevant file",
+                        "priority": idx,
+                    }
+                )
             elif isinstance(item, dict) and item.get("path"):
-                relevant_files.append({
-                    "path": item["path"],
-                    "why": item.get("why") or item.get("reason") or "advisor-selected relevant file",
-                    "priority": int(item.get("priority") or idx),
-                })
+                relevant_files.append(
+                    {
+                        "path": item["path"],
+                        "why": item.get("why")
+                        or item.get("reason")
+                        or "advisor-selected relevant file",
+                        "priority": int(item.get("priority") or idx),
+                    }
+                )
 
         relevant_symbols = []
         for item in payload.get("relevant_symbols") or []:
             if isinstance(item, str):
-                relevant_symbols.append({"name": item, "path": "", "why": "advisor-selected symbol"})
+                relevant_symbols.append(
+                    {"name": item, "path": "", "why": "advisor-selected symbol"}
+                )
             elif isinstance(item, dict):
-                relevant_symbols.append({
-                    "name": item.get("name") or item.get("symbol") or "unknown",
-                    "path": item.get("path") or "",
-                    "why": item.get("why") or item.get("reason") or "advisor-selected symbol",
-                })
+                relevant_symbols.append(
+                    {
+                        "name": item.get("name") or item.get("symbol") or "unknown",
+                        "path": item.get("path") or "",
+                        "why": item.get("why")
+                        or item.get("reason")
+                        or "advisor-selected symbol",
+                    }
+                )
 
         return {
             "task_type": payload.get("task_type") or "feature",
             "relevant_files": relevant_files,
             "relevant_symbols": relevant_symbols,
             "constraints": _to_strings(payload.get("constraints") or []),
-            "likely_failure_modes": _to_strings(payload.get("likely_failure_modes") or []),
+            "likely_failure_modes": _to_strings(
+                payload.get("likely_failure_modes") or []
+            ),
             "recommended_plan": _to_strings(payload.get("recommended_plan") or []),
             "avoid": _to_strings(payload.get("avoid") or []),
             "confidence": float(payload.get("confidence") or 0.0),

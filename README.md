@@ -89,6 +89,8 @@ Current repo status:
 - health checks now expose runtime/config state on `/healthz`
 - CI workflow tests Python 3.11 and 3.12
 - Ruff linting is configured and passes locally
+- inference runtime now supports retries, timeout handling, warm-load, and fallback behavior
+- GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing
 

@@ -4,11 +4,17 @@ from agent.advisor.settings import AdvisorSettings
 
 
 class StubRuntime:
+    def __init__(self):
+        self.warmup_calls = 0
+
     def generate_advice(self, packet):
         return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect likely file"], confidence=0.7)
 
     def capabilities(self):
         return {"runtime": "stub", "available": True, "ready": True, "reason": None}
+
+    def warmup(self):
+        self.warmup_calls += 1
 
 
 class UnavailableRuntime:
@@ -33,6 +39,16 @@ def test_gateway_builds_packet_and_returns_advice(tmp_path):
     assert result.advisor_input_packet.task_type == "bugfix"
     stored = gateway.trace_store.get_run(result.run_id)
     assert stored is not None
+
+
+
+def test_gateway_warm_load_calls_runtime_warmup(tmp_path):
+    runtime = StubRuntime()
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), warm_load_on_start=True)
+
+    AdvisorGateway(settings=settings, runtime=runtime)
+
+    assert runtime.warmup_calls == 1
 
 
 
