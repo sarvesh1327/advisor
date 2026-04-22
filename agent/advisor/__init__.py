@@ -2,6 +2,16 @@
 
 from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
 from .gateway import AdvisorGateway
+from .integrations import (
+    BuildTestCommandVerifier,
+    CodingAgentSubprocessExecutor,
+    DomainWorkerSubprocessExecutor,
+    FrontierHTTPExecutor,
+    HumanReviewFileVerifier,
+    IntegrationRegistry,
+    RubricTextVerifier,
+    ScreenshotHashVerifier,
+)
 from .observability import LiveMetricsSnapshot, RunEventLogger, build_audit_report, export_live_metrics, redact_packet
 from .orchestration import (
     AdvisorOrchestrator,
@@ -35,16 +45,24 @@ __all__ = [
     "AdvisorSettings",
     "AdvisorTaskRequest",
     "AdvisorTaskRunResult",
+    "BuildTestCommandVerifier",
     "BuildTestVerifier",
     "CodingAgentExecutor",
+    "CodingAgentSubprocessExecutor",
     "DeterministicABRouter",
     "DomainWorkerExecutor",
+    "DomainWorkerSubprocessExecutor",
     "FrontierChatExecutor",
+    "FrontierHTTPExecutor",
+    "HumanReviewFileVerifier",
     "HumanReviewVerifier",
+    "IntegrationRegistry",
     "LiveMetricsSnapshot",
     "RubricVerifier",
     "RunEventLogger",
+    "RubricTextVerifier",
     "ScreenshotComparisonVerifier",
+    "ScreenshotHashVerifier",
     "build_audit_report",
     "create_gateway",
     "create_http_app",

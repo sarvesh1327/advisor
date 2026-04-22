@@ -111,3 +111,39 @@ Core rule:
 - [x] Add metrics surface or export path for eval and live runs
 - [x] Add production operating notes for multi-tenant or hosted deployments
 - [x] Add audit notes for dataset provenance and reward-label lineage
+
+## Phase 12 — Real executor and verifier integrations
+- [x] Add real frontier-chat, coding-agent, and domain-worker executor integrations
+- [x] Add real build/test, rubric, screenshot, and human-review verifier integrations
+- [x] Freeze the baseline vs advisor-assisted parity contract across the same executor/verifier path
+- [x] Normalize executor/verifier outputs into the canonical lineage without drift
+
+## Phase 13 — Canonical benchmark and replay suite
+- [ ] Freeze reproducible benchmark splits for core domains
+- [ ] Add benchmark manifests that capture packet hash, executor config, verifier set, routing arm, and reward version
+- [ ] Add reproducible baseline vs advisor-assisted results generation
+- [ ] Add ablation-friendly benchmark reporting
+
+## Phase 14 — Real training loop and checkpoint lifecycle
+- [ ] Train at least one real advisor checkpoint from repo-generated data
+- [ ] Evaluate checkpoints against frozen replay/benchmark suites
+- [ ] Add checkpoint promotion / rollback based on benchmark outcomes
+- [ ] Persist exact experiment manifests for each training run
+
+## Phase 15 — Operator surface and deployment path
+- [ ] Add deployable single-tenant and hosted/service operating paths
+- [ ] Add run inspection / dashboard surface for lineage, rewards, failures, and benchmark summaries
+- [ ] Add background jobs, queueing, and resumability for long runs
+- [ ] Enforce retention / archival / rotation behavior operationally
+
+## Phase 16 — Paper-faithful results pass
+- [ ] Run canonical baseline vs advisor-assisted studies on frozen suites
+- [ ] Run packet/advice/reward ablations and transfer experiments
+- [ ] Produce a credible results report with benchmark tables, failure taxonomy, and provenance coverage
+- [ ] Document remaining divergences from the source paper explicitly
+
+## Phase 17 — Finished product hardening
+- [ ] Harden auth, tenancy, isolation, and operator runbooks
+- [ ] Add release gates based on benchmark regression thresholds
+- [ ] Finalize packaging / backup / import-export / alerting paths
+- [ ] Lock truth-surface schemas and version benchmark / reward / experiment contracts
