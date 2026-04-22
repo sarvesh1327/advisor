@@ -28,8 +28,10 @@ class AdvisorSettings(BaseModel):
     model_version: str = "advisor-qwen25-3b-v1"
     system_prompt: str = (
         "You are an execution advisor. Return ONLY valid JSON with keys "
-        "task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
-        "recommended_plan, avoid, confidence, notes. Do not emit markdown, role tags, or commentary."
+        "task_type, focus_targets, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
+        "recommended_plan, avoid, confidence, notes, injection_policy. "
+        "Prefer generic focus_targets as the canonical advice surface. "
+        "Do not emit markdown, role tags, or commentary."
     )
     fallback_model_name: str | None = None
     max_context_files: int = 8
@@ -75,8 +77,10 @@ class AdvisorSettings(BaseModel):
             system_prompt=os.getenv(
                 "ADVISOR_SYSTEM_PROMPT",
                 "You are an execution advisor. Return ONLY valid JSON with keys "
-                "task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
-                "recommended_plan, avoid, confidence, notes. Do not emit markdown, role tags, or commentary.",
+                "task_type, focus_targets, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
+                "recommended_plan, avoid, confidence, notes, injection_policy. "
+                "Prefer generic focus_targets as the canonical advice surface. "
+                "Do not emit markdown, role tags, or commentary.",
             ),
             fallback_model_name=os.getenv("ADVISOR_FALLBACK_MODEL"),
             max_context_files=int(os.getenv("ADVISOR_MAX_CONTEXT_FILES", "8")),

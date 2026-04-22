@@ -1,5 +1,5 @@
 from agent.advisor.gateway import AdvisorGateway, create_app
-from agent.advisor.schemas import AdviceBlock
+from agent.advisor.schemas import AdviceBlock, ExecutorInjectionPolicy
 from agent.advisor.settings import AdvisorSettings
 
 
@@ -48,6 +48,36 @@ def test_gateway_builds_packet_and_returns_advice(tmp_path):
     assert runtime.generate_calls[0]["system_prompt"] == "You are a generic execution advisor."
     stored = gateway.trace_store.get_run(result.run_id)
     assert stored is not None
+    assert stored["injected_advice"]["recommended_plan"] == ["inspect likely file"]
+    assert stored["injected_rendered_advice"].startswith("[Advisor hint")
+    assert stored["injection_policy"]["strategy"] == "prepend"
+
+
+def test_gateway_respects_explicit_injection_policy_threshold(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("def main():\n    pass\n")
+
+    class LowConfidenceRuntime(StubRuntime):
+        def generate_advice(self, packet, system_prompt=None):
+            self.generate_calls.append({"packet": packet, "system_prompt": system_prompt})
+            return AdviceBlock(
+                task_type=packet.task_type,
+                recommended_plan=["inspect likely file"],
+                confidence=0.2,
+                injection_policy=ExecutorInjectionPolicy(min_confidence=0.5),
+            )
+
+    gateway = AdvisorGateway(
+        settings=AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db")),
+        runtime=LowConfidenceRuntime(),
+    )
+
+    result = gateway.task_run(task_text="fix main entrypoint bug", repo_path=str(repo))
+    stored = gateway.trace_store.get_run(result.run_id)
+
+    assert stored is not None
+    assert "below injection threshold" in stored["injected_rendered_advice"]
 
 
 

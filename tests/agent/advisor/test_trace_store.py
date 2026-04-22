@@ -8,6 +8,7 @@ from agent.advisor.schemas import (
     AdvisorOutcome,
     AdvisorTask,
     CandidateFile,
+    ExecutorInjectionPolicy,
     RepoSummary,
 )
 from agent.advisor.trace_store import AdvisorTraceStore
@@ -43,6 +44,13 @@ def test_trace_store_roundtrip(tmp_path):
     assert row is not None
     assert row["run_id"] == "run-1"
     assert row["advice"]["recommended_plan"] == ["inspect main.py"]
+    assert row["injected_advice"]["recommended_plan"] == ["inspect main.py"]
+    assert row["injection_policy"] == {
+        "strategy": "prepend",
+        "format": "plain_text",
+        "min_confidence": 0.0,
+        "include_confidence_note": True,
+    }
     assert row["outcome"]["status"] == "success"
     assert row["input"]["task"]["domain"] == "coding"
     assert row["input"]["artifacts"][0]["locator"] == "main.py"
@@ -102,10 +110,16 @@ def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
 
     store.record_task_run(
         packet,
-        AdviceBlock(task_type="ui-update", recommended_plan=["inspect ui/screens/home.png"], confidence=0.7),
+        AdviceBlock(
+            task_type="ui-update",
+            recommended_plan=["inspect ui/screens/home.png"],
+            confidence=0.7,
+            injection_policy=ExecutorInjectionPolicy(min_confidence=0.5),
+        ),
         advisor_model="advisor-test",
         latency_ms=12,
         prompt_hash="def",
+        injected_rendered_advice="[Advisor hint — use as guidance, not authority]",
     )
 
     replay = store.get_run("run-generic")
@@ -125,6 +139,8 @@ def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
     assert replay["input"]["history"][0]["kind"] == "prior-attempt"
     assert replay["input"]["history"][0]["metadata"]["region_hint"] == "hero"
     assert replay["input"]["domain_capabilities"][0]["supports_symbol_regions"] is True
+    assert replay["injection_policy"]["min_confidence"] == 0.5
+    assert replay["injected_rendered_advice"] == "[Advisor hint — use as guidance, not authority]"
 
 
 def test_trace_store_prefers_prior_failures_with_changed_file_overlap(tmp_path):
