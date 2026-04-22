@@ -78,12 +78,15 @@ Check the installed CLI:
 
 ```bash
 advisor version
+advisor serve --host 127.0.0.1 --port 8000
 ```
 
 Current repo status:
 - standalone package install works
 - focused advisor test suite passes
 - no Hermes-specific Python references remain in this repo
+- config can now load from `ADVISOR_CONFIG=/path/to/advisor.toml`
+- health checks now expose runtime/config state on `/healthz`
 
 ## Helper scripts
 

@@ -21,7 +21,7 @@ except ImportError:
 
 class AdvisorGateway:
     def __init__(self, settings: AdvisorSettings | None = None, runtime: Any | None = None, trace_store: AdvisorTraceStore | None = None):
-        self.settings = settings or AdvisorSettings.from_env()
+        self.settings = settings or AdvisorSettings.load()
         self.settings.ensure_dirs()
         self.trace_store = trace_store or AdvisorTraceStore(self.settings.trace_db_path)
         self.context_builder = ContextBuilder(
@@ -33,6 +33,22 @@ class AdvisorGateway:
         )
         self.runtime = runtime or MLXAdvisorRuntime(self.settings)
         self.validator = AdviceValidator()
+
+    def system_health(self) -> dict:
+        runtime_caps_fn = getattr(self.runtime, "capabilities", None)
+        runtime_health = runtime_caps_fn() if callable(runtime_caps_fn) else {
+            "runtime": type(self.runtime).__name__,
+            "available": True,
+            "ready": True,
+            "reason": None,
+        }
+        status = "ok" if runtime_health.get("available") else "degraded"
+        return {
+            "status": status,
+            "version": __version__,
+            "config": self.settings.health_payload(),
+            "runtime": runtime_health,
+        }
 
     def task_run(
         self,
@@ -80,16 +96,16 @@ class AdvisorGateway:
         )
 
 
-def create_app(settings: AdvisorSettings | None = None):
+def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = None):
     if FastAPI is None:
         raise RuntimeError("fastapi is not installed. Install the web or advisor extras to create the HTTP app.")
 
-    gateway = AdvisorGateway(settings=settings)
+    gateway = AdvisorGateway(settings=settings, runtime=runtime)
     app = FastAPI(title="Advisor", version=__version__)
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok", "version": __version__}
+        return gateway.system_health()
 
     @app.post("/v1/advisor/task-run", response_model=AdvisorTaskRunResult)
     def task_run(req: AdvisorTaskRequest):

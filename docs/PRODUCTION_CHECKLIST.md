@@ -10,11 +10,11 @@ This is the working checklist for turning Advisor from a clean extracted prototy
 - [x] Document the public surface in the README
 
 ## Phase 2 — Config and runtime hardening
-- [ ] Add structured config loading beyond env vars
-- [ ] Validate config at startup
-- [ ] Add runtime capability checks
-- [ ] Add clearer missing-dependency and startup failures
-- [ ] Add health/startup checks for model/runtime state
+- [x] Add structured config loading beyond env vars
+- [x] Validate config at startup
+- [x] Add runtime capability checks
+- [x] Add clearer missing-dependency and startup failures
+- [x] Add health/startup checks for model/runtime state
 
 ## Phase 3 — Packaging and repo hygiene
 - [ ] Add CI for tests
