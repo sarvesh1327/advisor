@@ -1,7 +1,11 @@
 
 from agent.advisor.schemas import (
     AdviceBlock,
+    AdvisorArtifact,
+    AdvisorContext,
+    AdvisorHistoryEntry,
     AdvisorInputPacket,
+    AdvisorTask,
     CandidateFile,
     FailureSignal,
     RepoSummary,
@@ -28,7 +32,31 @@ def test_advisor_input_packet_roundtrip():
         tool_limits={"write_allowed": True},
         acceptance_criteria=["tests pass"],
         token_budget=1200,
+        task=AdvisorTask(domain="coding", text="fix cli bug", type="bugfix"),
+        context=AdvisorContext(
+            summary="coding repo task",
+            metadata={"repo": {"path": "/tmp/repo"}, "repo_summary": {"modules": ["app"]}},
+        ),
+        artifacts=[
+            AdvisorArtifact(
+                kind="file",
+                locator="main.py",
+                description="task token match",
+                metadata={"score": 0.8},
+                score=0.8,
+            )
+        ],
+        history=[
+            AdvisorHistoryEntry(
+                kind="wrong-file",
+                summary="edited unrelated file",
+                metadata={"source": "recent_failures"},
+            )
+        ],
     )
     dumped = packet.model_dump()
     assert dumped["task_type"] == "bugfix"
     assert dumped["candidate_files"][0]["path"] == "main.py"
+    assert dumped["task"]["domain"] == "coding"
+    assert dumped["artifacts"][0]["locator"] == "main.py"
+    assert dumped["history"][0]["kind"] == "wrong-file"

@@ -232,19 +232,20 @@ class AdvisorTraceStore:
             } if row["status"] else None,
         }
         if include_context:
-            result["input"] = {
-                "run_id": row["run_id"],
-                "task_text": row["task_text"],
-                "task_type": row["task_type"],
-                "repo": {"path": row["repo_path"], "branch": row["branch"], "dirty": False},
-                "repo_summary": json.loads(row["repo_summary_json"]) if row["repo_summary_json"] else {},
-                "candidate_files": json.loads(row["candidate_files_json"]) if row["candidate_files_json"] else [],
-                "recent_failures": json.loads(row["recent_failures_json"]) if row["recent_failures_json"] else [],
-                "constraints": json.loads(row["constraints_json"]) if row["constraints_json"] else [],
-                "tool_limits": json.loads(row["tool_limits_json"]) if row["tool_limits_json"] else {},
-                "acceptance_criteria": json.loads(row["acceptance_criteria_json"]) if row["acceptance_criteria_json"] else [],
-                "token_budget": row["token_budget"] or 0,
-            }
+            packet = AdvisorInputPacket(
+                run_id=row["run_id"],
+                task_text=row["task_text"],
+                task_type=row["task_type"],
+                repo={"path": row["repo_path"], "branch": row["branch"], "dirty": False},
+                repo_summary=json.loads(row["repo_summary_json"]) if row["repo_summary_json"] else {},
+                candidate_files=json.loads(row["candidate_files_json"]) if row["candidate_files_json"] else [],
+                recent_failures=json.loads(row["recent_failures_json"]) if row["recent_failures_json"] else [],
+                constraints=json.loads(row["constraints_json"]) if row["constraints_json"] else [],
+                tool_limits=json.loads(row["tool_limits_json"]) if row["tool_limits_json"] else {},
+                acceptance_criteria=json.loads(row["acceptance_criteria_json"]) if row["acceptance_criteria_json"] else [],
+                token_budget=row["token_budget"] or 0,
+            )
+            result["input"] = packet.model_dump()
         return result
 
     def find_recent_failures(self, task_text: str, repo_path: str, limit: int = 5) -> list[FailureSignal]:

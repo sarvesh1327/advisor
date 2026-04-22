@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CandidateFile(BaseModel):
@@ -36,6 +36,32 @@ class RelevantSymbol(BaseModel):
     why: str
 
 
+class AdvisorTask(BaseModel):
+    domain: str = "coding"
+    text: str
+    type: str
+
+
+class AdvisorContext(BaseModel):
+    summary: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdvisorArtifact(BaseModel):
+    kind: str
+    locator: str
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    score: float = 0.0
+
+
+class AdvisorHistoryEntry(BaseModel):
+    kind: str
+    summary: str
+    locator: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AdvisorTaskRequest(BaseModel):
     run_id: str | None = None
     task_text: str
@@ -62,6 +88,47 @@ class AdvisorInputPacket(BaseModel):
     tool_limits: dict[str, Any] = Field(default_factory=dict)
     acceptance_criteria: list[str] = Field(default_factory=list)
     token_budget: int
+    task: AdvisorTask | None = None
+    context: AdvisorContext | None = None
+    artifacts: list[AdvisorArtifact] = Field(default_factory=list)
+    history: list[AdvisorHistoryEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def populate_generic_fields(self) -> "AdvisorInputPacket":
+        if self.task is None:
+            self.task = AdvisorTask(domain="coding", text=self.task_text, type=self.task_type)
+        if self.context is None:
+            self.context = AdvisorContext(
+                summary=f"{self.task.domain} task context",
+                metadata={
+                    "repo": self.repo,
+                    "repo_summary": self.repo_summary.model_dump(),
+                    "tool_limits": self.tool_limits,
+                    "token_budget": self.token_budget,
+                },
+            )
+        if not self.artifacts:
+            self.artifacts = [
+                AdvisorArtifact(
+                    kind="file",
+                    locator=item.path,
+                    description=item.reason,
+                    metadata={"source": "candidate_files"},
+                    score=item.score,
+                )
+                for item in self.candidate_files
+            ]
+        if not self.history:
+            self.history = [
+                AdvisorHistoryEntry(
+                    kind=item.kind,
+                    summary=item.summary,
+                    locator=item.file,
+                    metadata={"fix_hint": item.fix_hint} if item.fix_hint else {},
+                )
+                for item in self.recent_failures
+            ]
+        return self
 
 
 class AdviceBlock(BaseModel):
