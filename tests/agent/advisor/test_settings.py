@@ -26,6 +26,10 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("ADVISOR_MAX_RETRIES", "3")
     monkeypatch.setenv("ADVISOR_INFERENCE_TIMEOUT_SECONDS", "15")
     monkeypatch.setenv("ADVISOR_REWARD_PRESET", "human-first")
+    monkeypatch.setenv("ADVISOR_RETENTION_DAYS", "45")
+    monkeypatch.setenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "logs" / "events.jsonl"))
+    monkeypatch.setenv("ADVISOR_REDACT_SENSITIVE_FIELDS", "true")
+    monkeypatch.setenv("ADVISOR_HOSTED_MODE", "true")
 
     settings = AdvisorSettings.from_env()
 
@@ -41,6 +45,10 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.inference_timeout_seconds == 15
     assert settings.reward_preset == "human-first"
     assert settings.reward_weights().human_usefulness == 0.25
+    assert settings.retention_days == 45
+    assert settings.event_log_path == str(advisor_home / "logs" / "events.jsonl")
+    assert settings.redact_sensitive_fields is True
+    assert settings.hosted_mode is True
 
 
 
@@ -136,6 +144,8 @@ def test_settings_validate_rejects_negative_timeout():
 
 def test_settings_ensure_dirs_creates_parent(tmp_path):
     db_path = tmp_path / "nested" / "data" / "advisor.db"
-    settings = AdvisorSettings(trace_db_path=str(db_path))
+    event_log_path = tmp_path / "logs" / "events.jsonl"
+    settings = AdvisorSettings(trace_db_path=str(db_path), event_log_path=str(event_log_path))
     settings.ensure_dirs()
     assert db_path.parent.exists()
+    assert event_log_path.parent.exists()

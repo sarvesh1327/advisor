@@ -2,6 +2,7 @@
 
 from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
 from .gateway import AdvisorGateway
+from .observability import LiveMetricsSnapshot, RunEventLogger, build_audit_report, export_live_metrics, redact_packet
 from .orchestration import (
     AdvisorOrchestrator,
     BuildTestVerifier,
@@ -40,11 +41,16 @@ __all__ = [
     "DomainWorkerExecutor",
     "FrontierChatExecutor",
     "HumanReviewVerifier",
+    "LiveMetricsSnapshot",
     "RubricVerifier",
+    "RunEventLogger",
     "ScreenshotComparisonVerifier",
+    "build_audit_report",
     "create_gateway",
     "create_http_app",
     "create_orchestrator",
+    "export_live_metrics",
     "get_version",
+    "redact_packet",
     "run_task",
-]
+ ]

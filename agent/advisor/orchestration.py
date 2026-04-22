@@ -7,6 +7,7 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, Field
 
 from .injector import render_advice_for_user_context
+from .observability import RunEventLogger
 from .reward_model import RewardWeights, compute_reward_label
 from .schemas import (
     AdviceBlock,
@@ -213,10 +214,18 @@ class AdvisorOrchestrator:
         self.router = router or DeterministicABRouter(advisor_fraction=1.0)
         self.enable_second_pass_review = enable_second_pass_review
         self.validator = AdviceValidator()
+        self.event_logger = RunEventLogger(self.settings.event_log_path)
 
     def run(self, packet: AdvisorInputPacket, *, system_prompt: str | None = None) -> LiveRunResult:
+        self.event_logger.log("run.started", run_id=packet.run_id, stage="advisor", payload={"task_type": packet.task_type})
         primary_advice, latency_ms = self._generate_advice(packet, system_prompt=system_prompt)
         routing_decision = self.router.choose(packet)
+        self.event_logger.log(
+            "routing.decided",
+            run_id=packet.run_id,
+            stage="router",
+            payload={"arm": routing_decision.arm, "bucket": routing_decision.bucket},
+        )
         rendered_advice = render_advice_for_user_context(primary_advice) if routing_decision.arm == "advisor" else None
         prompt_hash = sha256((packet.task_text + self.settings.model_version).encode("utf-8")).hexdigest()
         self.trace_store.record_task_run(
@@ -237,11 +246,24 @@ class AdvisorOrchestrator:
             routing_decision=routing_decision,
         )
         executor_result = self.executor.execute(executor_request)
+        self.event_logger.log(
+            "executor.completed",
+            run_id=packet.run_id,
+            stage="executor",
+            payload={"status": executor_result.status, "files_touched": executor_result.files_touched},
+        )
         review_advice = self._review_executor_output(packet, executor_result, system_prompt=system_prompt)
         verifier_results = [
             VerifierRunRecord(descriptor=verifier.descriptor, result=verifier.verify(executor_request, executor_result))
             for verifier in self.verifiers
         ]
+        for record in verifier_results:
+            self.event_logger.log(
+                "verifier.completed",
+                run_id=packet.run_id,
+                stage="verifier",
+                payload={"name": record.descriptor.name, "status": record.result.status},
+            )
         outcome = self._build_outcome(packet.run_id, executor_result, verifier_results)
         self.trace_store.record_outcome(outcome)
         constraint_violations = [
@@ -258,6 +280,12 @@ class AdvisorOrchestrator:
             weights=RewardWeights(**self.settings.reward_weights().__dict__),
         )
         self.trace_store.record_reward_label(reward_label)
+        self.event_logger.log(
+            "reward.recorded",
+            run_id=packet.run_id,
+            stage="reward",
+            payload={"total_reward": reward_label.total_reward, "example_type": reward_label.example_type},
+        )
         manifest = RunManifest(
             run_id=packet.run_id,
             routing_decision=routing_decision,
@@ -281,6 +309,7 @@ class AdvisorOrchestrator:
             reward_label=reward_label,
         )
         self.trace_store.record_lineage(packet.run_id, manifest, lineage)
+        self.event_logger.log("run.completed", run_id=packet.run_id, stage="lineage", payload={"status": outcome.status})
         return LiveRunResult(run_id=packet.run_id, manifest=manifest, lineage=lineage)
 
     def _generate_advice(self, packet: AdvisorInputPacket, *, system_prompt: str | None) -> tuple[AdviceBlock, int]:

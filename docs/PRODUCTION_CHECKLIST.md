@@ -105,9 +105,9 @@ Core rule:
 - [x] Add support for optional second-pass advisor review after executor output
 
 ## Phase 11 — Security, privacy, and observability
-- [ ] Document stored data, reward logs, and retention expectations
-- [ ] Add redaction and safe-default guidance for packets, traces, and human labels
-- [ ] Add structured logs and run-id tracing across advisor, executor, verifier, and reward stages
-- [ ] Add metrics surface or export path for eval and live runs
-- [ ] Add production operating notes for multi-tenant or hosted deployments
-- [ ] Add audit notes for dataset provenance and reward-label lineage
+- [x] Document stored data, reward logs, and retention expectations
+- [x] Add redaction and safe-default guidance for packets, traces, and human labels
+- [x] Add structured logs and run-id tracing across advisor, executor, verifier, and reward stages
+- [x] Add metrics surface or export path for eval and live runs
+- [x] Add production operating notes for multi-tenant or hosted deployments
+- [x] Add audit notes for dataset provenance and reward-label lineage
