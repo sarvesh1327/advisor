@@ -29,12 +29,19 @@ def _packet(run_id: str):
 def test_summarize_runs_counts_success_and_file_hit_rate(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     packet = _packet("run-1")
-    advice = AdviceBlock(task_type="bugfix", relevant_files=[RelevantFile(path="main.py", why="application entrypoint", priority=1)], confidence=0.8)
+    advice = AdviceBlock(
+        task_type="bugfix",
+        focus_targets=[{"kind": "file", "locator": "main.py", "rationale": "application entrypoint", "priority": 1}],
+        relevant_files=[RelevantFile(path="main.py", why="application entrypoint", priority=1)],
+        confidence=0.8,
+    )
     outcome = AdvisorOutcome(run_id="run-1", status="success", files_touched=["main.py"], retries=1, tests_run=["pytest -q"])
-    store.record_task_run(packet, advice, advisor_model="advisor-test", latency_ms=10, prompt_hash="abc")
+    store.record_task_run(packet, advice, advisor_model="advisor-test", latency_ms=10, prompt_hash="abc", injected_rendered_advice="[Advisor hint]")
     store.record_outcome(outcome)
 
     summary = summarize_runs(store)
     assert summary["total_runs"] == 1
     assert summary["success_runs"] == 1
     assert summary["file_hit_rate"] == 1.0
+    assert summary["focus_target_hit_rate"] == 1.0
+    assert summary["injected_advice_rate"] == 1.0
