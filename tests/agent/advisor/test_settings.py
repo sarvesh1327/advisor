@@ -1,5 +1,6 @@
-import os
-from pathlib import Path
+import textwrap
+
+import pytest
 
 from agent.advisor.settings import AdvisorSettings, get_default_advisor_home
 
@@ -31,6 +32,53 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.max_tokens == 700
     assert settings.temperature == 0.2
     assert settings.token_budget == 2200
+
+
+
+def test_settings_from_toml_file_loads_values(tmp_path):
+    config_path = tmp_path / "advisor.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            enabled = true
+            trace_db_path = "/tmp/advisor/custom.db"
+            model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+            model_version = "advisor-qwen25-7b-v2"
+            max_context_files = 10
+            max_tree_entries = 80
+            max_failures = 7
+            max_tokens = 640
+            temperature = 0.3
+            token_budget = 2400
+            """
+        ).strip()
+    )
+
+    settings = AdvisorSettings.from_toml(config_path)
+
+    assert settings.enabled is True
+    assert settings.trace_db_path == "/tmp/advisor/custom.db"
+    assert settings.model_version == "advisor-qwen25-7b-v2"
+    assert settings.max_failures == 7
+    assert settings.token_budget == 2400
+
+
+
+def test_settings_load_prefers_explicit_config_path(monkeypatch, tmp_path):
+    config_path = tmp_path / "advisor.toml"
+    config_path.write_text('model_version = "advisor-from-file"\n')
+    monkeypatch.setenv("ADVISOR_CONFIG", str(config_path))
+    monkeypatch.setenv("ADVISOR_MODEL_VERSION", "advisor-from-env")
+
+    settings = AdvisorSettings.load()
+
+    assert settings.model_version == "advisor-from-file"
+
+
+
+def test_settings_validate_rejects_invalid_token_budget():
+    with pytest.raises(ValueError):
+        AdvisorSettings(max_tokens=900, token_budget=800)
 
 
 

@@ -7,6 +7,18 @@ class StubRuntime:
     def generate_advice(self, packet):
         return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect likely file"], confidence=0.7)
 
+    def capabilities(self):
+        return {"runtime": "stub", "available": True, "ready": True, "reason": None}
+
+
+class UnavailableRuntime:
+    def generate_advice(self, packet):
+        raise AssertionError("should not be called in health tests")
+
+    def capabilities(self):
+        return {"runtime": "stub", "available": False, "ready": False, "reason": "model files missing"}
+
+
 
 def test_gateway_builds_packet_and_returns_advice(tmp_path):
     repo = tmp_path / "repo"
@@ -23,7 +35,32 @@ def test_gateway_builds_packet_and_returns_advice(tmp_path):
     assert stored is not None
 
 
+
 def test_create_app_uses_product_name(tmp_path):
     settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
     app = create_app(settings=settings)
     assert app.title == "Advisor"
+
+
+
+def test_gateway_system_health_reports_runtime_status(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
+    gateway = AdvisorGateway(settings=settings, runtime=UnavailableRuntime())
+
+    health = gateway.system_health()
+
+    assert health["status"] == "degraded"
+    assert health["runtime"]["available"] is False
+    assert health["config"]["valid"] is True
+
+
+
+def test_health_route_returns_gateway_health(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
+    app = create_app(settings=settings, runtime=UnavailableRuntime())
+    health_endpoint = next(route.endpoint for route in app.routes if route.path == "/healthz")
+
+    payload = health_endpoint()
+
+    assert payload["status"] == "degraded"
+    assert payload["runtime"]["reason"] == "model files missing"

@@ -16,6 +16,8 @@ except ImportError:
     mlx_lm_load = None
     mlx_make_sampler = None
 
+_MLX_MISSING_REASON = "mlx-lm is not installed. Install the advisor runtime extras to enable MLX inference."
+
 
 class MLXAdvisorRuntime:
     def __init__(self, settings: AdvisorSettings):
@@ -27,11 +29,23 @@ class MLXAdvisorRuntime:
     def prompt_hash_seed(self) -> str:
         return sha256(f"{self.settings.model_name}:{self.settings.model_version}".encode()).hexdigest()
 
+    def capabilities(self) -> dict:
+        available = mlx_lm_load is not None and mlx_lm_generate is not None and mlx_make_sampler is not None
+        ready = available and self._model is not None and self._tokenizer is not None
+        return {
+            "runtime": "mlx",
+            "available": available,
+            "ready": ready,
+            "reason": None if available else _MLX_MISSING_REASON,
+            "model_name": self.settings.model_name,
+            "model_version": self.settings.model_version,
+        }
+
     def _ensure_loaded(self):
         if self._model is not None and self._tokenizer is not None:
             return self._model, self._tokenizer
         if mlx_lm_load is None:
-            raise RuntimeError("mlx-lm is not installed. Install the advisor runtime extras to enable MLX inference.")
+            raise RuntimeError(_MLX_MISSING_REASON)
 
         self._model, self._tokenizer = mlx_lm_load(self.settings.model_name)
         return self._model, self._tokenizer
@@ -39,7 +53,7 @@ class MLXAdvisorRuntime:
     def generate_advice(self, packet) -> AdviceBlock:
         model, tokenizer = self._ensure_loaded()
         if mlx_lm_generate is None or mlx_make_sampler is None:
-            raise RuntimeError("mlx-lm is not installed. Install the advisor runtime extras to enable MLX inference.")
+            raise RuntimeError(_MLX_MISSING_REASON)
 
         prompt = tokenizer.apply_chat_template(
             [
