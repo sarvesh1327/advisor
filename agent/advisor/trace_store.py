@@ -90,6 +90,12 @@ class AdvisorTraceStore:
                   reward_json TEXT NOT NULL,
                   created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS run_lineages (
+                  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+                  manifest_json TEXT NOT NULL,
+                  lineage_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
                 """
             )
             columns = {
@@ -244,6 +250,30 @@ class AdvisorTraceStore:
                 """,
                 (reward_label.run_id, reward_label.model_dump_json(), now),
             )
+
+    def record_lineage(self, run_id: str, manifest, lineage) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO run_lineages(run_id, manifest_json, lineage_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (run_id, manifest.model_dump_json(), lineage.model_dump_json(), now),
+            )
+
+    def get_lineage(self, run_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT manifest_json, lineage_json FROM run_lineages WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "manifest": json.loads(row["manifest_json"]),
+            "lineage": json.loads(row["lineage_json"]),
+        }
 
     def get_run(self, run_id: str) -> dict | None:
         with self._connect() as conn:

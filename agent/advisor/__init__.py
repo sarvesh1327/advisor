@@ -1,7 +1,18 @@
 """Public package surface for the standalone Advisor product."""
 
-from .api import create_gateway, create_http_app, get_version, run_task
+from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
 from .gateway import AdvisorGateway
+from .orchestration import (
+    AdvisorOrchestrator,
+    BuildTestVerifier,
+    CodingAgentExecutor,
+    DeterministicABRouter,
+    DomainWorkerExecutor,
+    FrontierChatExecutor,
+    HumanReviewVerifier,
+    RubricVerifier,
+    ScreenshotComparisonVerifier,
+)
 from .schemas import (
     AdviceBlock,
     AdvisorInputPacket,
@@ -18,12 +29,22 @@ __all__ = [
     "AdviceBlock",
     "AdvisorGateway",
     "AdvisorInputPacket",
+    "AdvisorOrchestrator",
     "AdvisorOutcome",
     "AdvisorSettings",
     "AdvisorTaskRequest",
     "AdvisorTaskRunResult",
+    "BuildTestVerifier",
+    "CodingAgentExecutor",
+    "DeterministicABRouter",
+    "DomainWorkerExecutor",
+    "FrontierChatExecutor",
+    "HumanReviewVerifier",
+    "RubricVerifier",
+    "ScreenshotComparisonVerifier",
     "create_gateway",
     "create_http_app",
+    "create_orchestrator",
     "get_version",
     "run_task",
 ]

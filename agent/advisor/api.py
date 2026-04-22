@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from .gateway import AdvisorGateway, create_app
+from .orchestration import AdvisorOrchestrator
 from .schemas import AdvisorTaskRunResult
 from .settings import AdvisorSettings
+from .trace_store import AdvisorTraceStore
 from .version import __version__
 
 
@@ -18,6 +20,32 @@ def create_gateway(
     trace_store=None,
 ) -> AdvisorGateway:
     return AdvisorGateway(settings=settings, runtime=runtime, trace_store=trace_store)
+
+
+def create_orchestrator(
+    *,
+    executor,
+    verifiers: list | None = None,
+    settings: AdvisorSettings | None = None,
+    runtime=None,
+    trace_store=None,
+    router=None,
+    enable_second_pass_review: bool = False,
+) -> AdvisorOrchestrator:
+    active_settings = settings or AdvisorSettings.load()
+    active_trace_store = trace_store
+    if active_trace_store is None:
+        active_settings.ensure_dirs()
+        active_trace_store = AdvisorTraceStore(active_settings.trace_db_path)
+    return AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=active_trace_store,
+        executor=executor,
+        verifiers=verifiers,
+        settings=active_settings,
+        router=router,
+        enable_second_pass_review=enable_second_pass_review,
+    )
 
 
 def run_task(
