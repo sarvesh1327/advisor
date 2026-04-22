@@ -1,3 +1,4 @@
+from agent.advisor.reward_model import compute_reward_label
 from agent.advisor.schemas import (
     AdviceBlock,
     AdvisorArtifact,
@@ -141,6 +142,32 @@ def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
     assert replay["input"]["domain_capabilities"][0]["supports_symbol_regions"] is True
     assert replay["injection_policy"]["min_confidence"] == 0.5
     assert replay["injected_rendered_advice"] == "[Advisor hint — use as guidance, not authority]"
+
+
+def test_trace_store_records_reward_labels(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    packet = _packet("run-reward")
+    advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
+    outcome = AdvisorOutcome(
+        run_id="run-reward",
+        status="success",
+        files_touched=["main.py"],
+        retries=1,
+        tests_run=["pytest -q"],
+        review_verdict="pass",
+    )
+
+    store.record_task_run(packet, advice, advisor_model="advisor-test", latency_ms=10, prompt_hash="abc")
+    store.record_outcome(outcome)
+    reward_label = compute_reward_label(packet, advice, outcome, human_rating=5.0)
+
+    store.record_reward_label(reward_label)
+
+    row = store.get_run("run-reward")
+    assert row is not None
+    assert row["reward_label"]["run_id"] == "run-reward"
+    assert row["reward_label"]["components"]["task_success"] == 1.0
+    assert row["reward_label"]["example_type"] == "positive"
 
 
 def test_trace_store_prefers_prior_failures_with_changed_file_overlap(tmp_path):

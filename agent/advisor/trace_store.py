@@ -5,7 +5,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, FailureSignal
+from .schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, FailureSignal, RewardLabel
 
 
 class AdvisorTraceStore:
@@ -84,6 +84,11 @@ class AdvisorTraceStore:
                   target_advice_json TEXT NOT NULL,
                   split TEXT NOT NULL,
                   quality_score REAL NOT NULL DEFAULT 0.0
+                );
+                CREATE TABLE IF NOT EXISTS reward_labels (
+                  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+                  reward_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL
                 );
                 """
             )
@@ -229,6 +234,17 @@ class AdvisorTraceStore:
                         (signature, now),
                     )
 
+    def record_reward_label(self, reward_label: RewardLabel) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO reward_labels(run_id, reward_json, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (reward_label.run_id, reward_label.model_dump_json(), now),
+            )
+
     def get_run(self, run_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -238,11 +254,13 @@ class AdvisorTraceStore:
                        rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
                        ar.advice_json, ar.injected_advice_json, ar.injected_rendered_advice,
                        ar.injection_policy_json, ar.advisor_model, ar.latency_ms,
-                       ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
+                       ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary,
+                       rl.reward_json
                 FROM runs r
                 LEFT JOIN run_contexts rc ON rc.run_id = r.run_id
                 LEFT JOIN advice_records ar ON ar.run_id = r.run_id
                 LEFT JOIN run_outcomes ro ON ro.run_id = r.run_id
+                LEFT JOIN reward_labels rl ON rl.run_id = r.run_id
                 WHERE r.run_id = ?
                 """,
                 (run_id,),
@@ -260,11 +278,13 @@ class AdvisorTraceStore:
                        rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
                        ar.advice_json, ar.injected_advice_json, ar.injected_rendered_advice,
                        ar.injection_policy_json, ar.advisor_model, ar.latency_ms,
-                       ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
+                       ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary,
+                       rl.reward_json
                 FROM runs r
                 LEFT JOIN run_contexts rc ON rc.run_id = r.run_id
                 LEFT JOIN advice_records ar ON ar.run_id = r.run_id
                 LEFT JOIN run_outcomes ro ON ro.run_id = r.run_id
+                LEFT JOIN reward_labels rl ON rl.run_id = r.run_id
                 ORDER BY r.started_at DESC
                 """
             ).fetchall()
@@ -280,6 +300,7 @@ class AdvisorTraceStore:
             "injected_advice": json.loads(row["injected_advice_json"]) if row["injected_advice_json"] else None,
             "injected_rendered_advice": row["injected_rendered_advice"],
             "injection_policy": json.loads(row["injection_policy_json"]) if row["injection_policy_json"] else None,
+            "reward_label": json.loads(row["reward_json"]) if row["reward_json"] else None,
             "outcome": {
                 "status": row["status"],
                 "files_touched": json.loads(row["files_touched_json"]) if row["files_touched_json"] else [],

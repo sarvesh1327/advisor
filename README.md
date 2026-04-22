@@ -39,9 +39,6 @@ This repo contains the advisor module itself, not the full Hermes runtime.
 - architecture docs copied from the earlier design work
 
 ## What this repo does not include
-
-- full Hermes conversation loop
-- the original `run_agent.py` integration
 - CLI/product wiring
 - complete standalone packaging/runtime polish
 
@@ -90,6 +87,7 @@ Current repo status:
 - CI workflow tests Python 3.11 and 3.12
 - Ruff linting is configured and passes locally
 - inference runtime now supports retries, timeout handling, warm-load, and fallback behavior
+- reward weights now support named config presets (`balanced`, `conservative`, `human-first`) plus explicit overrides
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing
@@ -101,7 +99,7 @@ See `CONTRIBUTING.md` for local setup, test, and lint workflow.
 Export successful runs as JSONL:
 
 ```bash
-python scripts/export_advisor_training_examples.py ./out/train.jsonl
+python scripts/export_advisor_training_examples.py ./out/train.jsonl --min-quality-score 0.5
 ```
 
 Summarize trace metrics:
@@ -134,10 +132,3 @@ See `docs/PAPER_FOUNDATION.md` for the repo-level design rules derived from that
 
 Apache License 2.0. See `LICENSE`.
 
-## Origin
-
-Extracted from an earlier Hermes-based prototype, then cleaned into a standalone product-shaped repo.
-
-Notes:
-- the original Hermes-specific hook points used to live in `run_agent.py`
-- this extracted repo no longer depends on Hermes-specific Python modules

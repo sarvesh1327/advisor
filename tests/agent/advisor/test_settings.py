@@ -2,6 +2,7 @@ import textwrap
 
 import pytest
 
+from agent.advisor.reward_model import RewardWeights
 from agent.advisor.settings import AdvisorSettings, get_default_advisor_home
 
 
@@ -24,6 +25,7 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("ADVISOR_TOKEN_BUDGET", "2200")
     monkeypatch.setenv("ADVISOR_MAX_RETRIES", "3")
     monkeypatch.setenv("ADVISOR_INFERENCE_TIMEOUT_SECONDS", "15")
+    monkeypatch.setenv("ADVISOR_REWARD_PRESET", "human-first")
 
     settings = AdvisorSettings.from_env()
 
@@ -37,6 +39,8 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.token_budget == 2200
     assert settings.max_retries == 3
     assert settings.inference_timeout_seconds == 15
+    assert settings.reward_preset == "human-first"
+    assert settings.reward_weights().human_usefulness == 0.25
 
 
 
@@ -61,6 +65,13 @@ def test_settings_from_toml_file_loads_values(tmp_path):
             warm_load_on_start = true
             enable_fallback_runtime = true
             fallback_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+            reward_preset = "conservative"
+            [reward_weights]
+            task_success = 0.4
+            efficiency = 0.1
+            targeting_quality = 0.2
+            constraint_compliance = 0.2
+            human_usefulness = 0.1
             """
         ).strip()
     )
@@ -78,6 +89,14 @@ def test_settings_from_toml_file_loads_values(tmp_path):
     assert settings.warm_load_on_start is True
     assert settings.enable_fallback_runtime is True
     assert settings.fallback_model_name == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    assert settings.reward_preset == "conservative"
+    assert settings.reward_weights() == RewardWeights(
+        task_success=0.4,
+        efficiency=0.1,
+        targeting_quality=0.2,
+        constraint_compliance=0.2,
+        human_usefulness=0.1,
+    )
 
 
 
@@ -93,7 +112,17 @@ def test_settings_load_prefers_explicit_config_path(monkeypatch, tmp_path):
 
 
 
-def test_settings_validate_rejects_invalid_token_budget():
+def test_settings_reward_weights_support_named_presets_and_validation():
+    assert AdvisorSettings(reward_preset="balanced").reward_weights() == RewardWeights(
+        task_success=0.35,
+        efficiency=0.15,
+        targeting_quality=0.2,
+        constraint_compliance=0.2,
+        human_usefulness=0.1,
+    )
+    assert AdvisorSettings(reward_preset="human-first").reward_weights().human_usefulness == 0.25
+    with pytest.raises(ValueError):
+        AdvisorSettings(reward_preset="unknown")
     with pytest.raises(ValueError):
         AdvisorSettings(max_tokens=900, token_budget=800)
 

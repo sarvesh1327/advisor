@@ -74,16 +74,16 @@ Core rule:
 - [ ] Add regression-oriented eval docs and locked hard-case suites
 
 ## Phase 8 — Reward system and training data pipeline
-- [ ] Define the reward model inputs from canonical packet/advice/executor/verifier state plus human ratings and trajectory features
-- [ ] Implement reward computation for both offline replay and live runs
-- [ ] Add normalized reward components (`task_success`, `efficiency`, `targeting_quality`, `constraint_compliance`, `human_usefulness`)
-- [ ] Add curation flow for exported traces and reward-labeled examples
-- [ ] Add quality scoring and filtering before training
-- [ ] Add split policy (train/val/test) with task-family and repo-family leakage protection
-- [ ] Add deduping and hard-case bucketing
-- [ ] Add negative-example capture for harmful or noisy advice
-- [ ] Version datasets, reward configs, and labeling rules
-- [ ] Document feedback loop notes for future tuning
+- [x] Define the reward model inputs from canonical packet/advice/executor/verifier state plus human ratings and trajectory features
+- [x] Implement reward computation for both offline replay and live runs
+- [x] Add normalized reward components (`task_success`, `efficiency`, `targeting_quality`, `constraint_compliance`, `human_usefulness`)
+- [x] Add curation flow for exported traces and reward-labeled examples
+- [x] Add quality scoring and filtering before training
+- [x] Add split policy (train/val/test) with task-family and repo-family leakage protection
+- [x] Add deduping and hard-case bucketing
+- [x] Add negative-example capture for harmful or noisy advice
+- [x] Version datasets, reward configs, and labeling rules
+- [x] Document feedback loop notes for future tuning
 
 ## Phase 9 — Advisor optimization loop
 - [ ] Add training pipeline for advisor-model improvement from reward-labeled data
