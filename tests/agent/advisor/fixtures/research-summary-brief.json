@@ -1,0 +1,50 @@
+{
+  "fixture_id": "research-summary-brief",
+  "domain": "research-writing",
+  "description": "summarize a research brief from notes and sources",
+  "input_packet": {
+    "run_id": "fixture-research-1",
+    "task_text": "summarize the latest research brief",
+    "task_type": "research",
+    "repo": {"path": "/tmp/research", "branch": "main", "dirty": false},
+    "repo_summary": {
+      "modules": ["notes", "sources"],
+      "hotspots": ["notes/brief.md"],
+      "file_tree_slice": ["notes/brief.md", "sources/paper.md"]
+    },
+    "candidate_files": [
+      {"path": "notes/brief.md", "reason": "latest draft", "score": 1.0}
+    ],
+    "recent_failures": [],
+    "constraints": ["keep the summary concise"],
+    "tool_limits": {"web_read": true},
+    "acceptance_criteria": ["summary covers the main finding"],
+    "token_budget": 700,
+    "task": {"domain": "research-writing", "text": "summarize the latest research brief", "type": "research"},
+    "context": {"summary": "research-writing task context", "metadata": {"changed_files": ["notes/brief.md"]}},
+    "artifacts": [
+      {"kind": "note", "locator": "notes/brief.md", "description": "latest draft", "metadata": {"changed": true}, "score": 1.0}
+    ],
+    "history": [],
+    "domain_capabilities": [
+      {
+        "domain": "research-writing",
+        "supported_artifact_kinds": ["note", "source"],
+        "supported_packet_fields": ["task", "context", "artifacts", "constraints", "history", "acceptance_criteria"],
+        "supports_changed_artifacts": true,
+        "supports_symbol_regions": false
+      }
+    ]
+  },
+  "expected_advice": {
+    "focus_targets": ["notes/brief.md"],
+    "anti_targets": ["docs/old-plan.md"],
+    "required_plan_steps": ["inspect notes/brief.md"],
+    "forbidden_plan_steps": ["broad refactor"],
+    "expected_failure_modes": ["missing the main finding"]
+  },
+  "human_review_rubric": {
+    "scale": [0, 1, 2, 3],
+    "criteria": ["helpfulness", "oversteer", "calibration"]
+  }
+}
