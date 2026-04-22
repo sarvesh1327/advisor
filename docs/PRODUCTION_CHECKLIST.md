@@ -86,13 +86,13 @@ Core rule:
 - [x] Document feedback loop notes for future tuning
 
 ## Phase 9 — Advisor optimization loop
-- [ ] Add training pipeline for advisor-model improvement from reward-labeled data
-- [ ] Support at least one supervised warm-start path and one preference/reward-optimization path
-- [ ] Add experiment config for student advisor model, target executor, domain mix, and reward weights
-- [ ] Add checkpoint evaluation against frozen replay/eval suites
-- [ ] Add transfer experiments: advisor trained with lower-cost executor context but evaluated against stronger black-box executor
-- [ ] Add ablations for packet fields, advice schema fields, and reward components
-- [ ] Add rollback criteria when a newly trained advisor regresses on baseline suites
+- [x] Add training pipeline for advisor-model improvement from reward-labeled data
+- [x] Support at least one supervised warm-start path and one preference/reward-optimization path
+- [x] Add experiment config for student advisor model, target executor, domain mix, and reward weights
+- [x] Add checkpoint evaluation against frozen replay/eval suites
+- [x] Add transfer experiments: advisor trained with lower-cost executor context but evaluated against stronger black-box executor
+- [x] Add ablations for packet fields, advice schema fields, and reward components
+- [x] Add rollback criteria when a newly trained advisor regresses on baseline suites
 
 ## Phase 10 — Orchestration and live product loop
 - [ ] Add a first-class runner for advisor -> executor -> verifier -> reward capture
