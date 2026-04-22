@@ -43,3 +43,7 @@ def test_context_builder_ignores_next_build_artifacts(tmp_path):
     assert all(not item.startswith(".next/") for item in packet.repo_summary.file_tree_slice)
     assert all(not candidate.path.startswith(".next/") for candidate in packet.candidate_files)
     assert packet.candidate_files[0].path == "src/app/page.tsx"
+    assert packet.task.domain == "coding"
+    assert packet.context.metadata["repo"]["path"] == str(repo)
+    assert packet.artifacts[0].kind == "file"
+    assert packet.artifacts[0].locator == "src/app/page.tsx"

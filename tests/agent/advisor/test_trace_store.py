@@ -39,3 +39,6 @@ def test_trace_store_roundtrip(tmp_path):
     assert row["run_id"] == "run-1"
     assert row["advice"]["recommended_plan"] == ["inspect main.py"]
     assert row["outcome"]["status"] == "success"
+    assert row["input"]["task"]["domain"] == "coding"
+    assert row["input"]["artifacts"][0]["locator"] == "main.py"
+    assert row["input"]["context"]["metadata"]["repo"]["path"] == "/tmp/repo"
