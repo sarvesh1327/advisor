@@ -74,9 +74,15 @@ Run tests:
 pytest tests/agent/advisor -q
 ```
 
+Check the installed CLI:
+
+```bash
+advisor version
+```
+
 Current repo status:
 - standalone package install works
-- focused advisor test suite passes (`14 passed`)
+- focused advisor test suite passes
 - no Hermes-specific Python references remain in this repo
 
 ## Helper scripts
@@ -96,6 +102,10 @@ python scripts/advisor_metrics_summary.py
 ## Architecture docs
 
 See `docs/ARCHITECTURE.md` for the image index and diagram notes.
+
+## Production roadmap
+
+See `docs/PRODUCTION_CHECKLIST.md` for the staged production-readiness checklist.
 
 ## Reference
 

@@ -6,6 +6,7 @@ from hashlib import sha256
 from typing import Any
 
 from .context_builder import ContextBuilder
+from .version import __version__
 from .runtime_mlx import MLXAdvisorRuntime
 from .schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from .settings import AdvisorSettings
@@ -84,7 +85,11 @@ def create_app(settings: AdvisorSettings | None = None):
         raise RuntimeError("fastapi is not installed. Install the web or advisor extras to create the HTTP app.")
 
     gateway = AdvisorGateway(settings=settings)
-    app = FastAPI(title="Advisor", version="0.1.0")
+    app = FastAPI(title="Advisor", version=__version__)
+
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok", "version": __version__}
 
     @app.post("/v1/advisor/task-run", response_model=AdvisorTaskRunResult)
     def task_run(req: AdvisorTaskRequest):
