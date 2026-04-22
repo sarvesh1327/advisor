@@ -1,6 +1,7 @@
 """Public package surface for the standalone Advisor product."""
 
 from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
+from .benchmark import BenchmarkCase, BenchmarkRunManifest, BenchmarkSuite, build_benchmark_run_manifest, compare_benchmark_arms, freeze_benchmark_suite
 from .gateway import AdvisorGateway
 from .integrations import (
     BuildTestCommandVerifier,
@@ -45,6 +46,9 @@ __all__ = [
     "AdvisorSettings",
     "AdvisorTaskRequest",
     "AdvisorTaskRunResult",
+    "BenchmarkCase",
+    "BenchmarkRunManifest",
+    "BenchmarkSuite",
     "BuildTestCommandVerifier",
     "BuildTestVerifier",
     "CodingAgentExecutor",
@@ -64,10 +68,13 @@ __all__ = [
     "ScreenshotComparisonVerifier",
     "ScreenshotHashVerifier",
     "build_audit_report",
+    "build_benchmark_run_manifest",
+    "compare_benchmark_arms",
     "create_gateway",
     "create_http_app",
     "create_orchestrator",
     "export_live_metrics",
+    "freeze_benchmark_suite",
     "get_version",
     "redact_packet",
     "run_task",
