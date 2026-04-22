@@ -120,3 +120,62 @@ def test_cli_deployment_profile_respects_mode_override(monkeypatch, tmp_path, ca
     assert exit_code == 0
     assert payload["mode"] == "hosted"
     assert payload["auth_boundary"] == "external auth proxy required"
+
+
+def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, capsys):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+    report_path = tmp_path / "report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "canonical_study": {"lift_summary": {"advisor_minus_baseline_overall_score": 0.1}},
+                "provenance_coverage": {"reward_label_coverage": 1.0, "lineage_coverage": 1.0},
+                "paper_divergences": [{"area": "executor_surface", "status": "intentional_productization"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hardening_exit = cli.main(["hardening-profile", "--mode", "hosted"])
+    hardening_payload = json.loads(capsys.readouterr().out)
+    release_exit = cli.main(["release-gate", "--report-path", str(report_path)])
+    release_payload = json.loads(capsys.readouterr().out)
+
+    assert hardening_exit == 0
+    assert hardening_payload["mode"] == "hosted"
+    assert hardening_payload["tenancy"]["tenant_id_required"] is True
+    assert release_exit == 0
+    assert release_payload["verdict"]["pass"] is True
+    assert release_payload["alerts"]["severity"] == "info"
+
+
+def test_cli_export_and_import_bundle_commands(monkeypatch, tmp_path, capsys):
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    trace_db = state_root / "advisor.db"
+    event_log = state_root / "events.jsonl"
+    trace_db.write_text("sqlite-placeholder", encoding="utf-8")
+    event_log.write_text('{"event":"ok"}\n', encoding="utf-8")
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(trace_db), event_log_path=str(event_log))
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+
+    export_exit = cli.main(["export-bundle", "--output-dir", str(tmp_path / "bundle")])
+    export_payload = json.loads(capsys.readouterr().out)
+    import_exit = cli.main(
+        [
+            "import-bundle",
+            "--bundle-path",
+            str(tmp_path / "bundle"),
+            "--target-root",
+            str(tmp_path / "restored"),
+        ]
+    )
+    import_payload = json.loads(capsys.readouterr().out)
+
+    assert export_exit == 0
+    assert (tmp_path / "bundle" / "state" / "advisor.db").exists()
+    assert import_exit == 0
+    assert (tmp_path / "restored" / "state" / "advisor.db").exists()
+    assert export_payload["bundle_path"] == str(tmp_path / "bundle")
+    assert import_payload["restored_root"] == str(tmp_path / "restored")

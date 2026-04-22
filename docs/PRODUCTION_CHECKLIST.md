@@ -143,7 +143,7 @@ Core rule:
 - [x] Document remaining divergences from the source paper explicitly
 
 ## Phase 17 — Finished product hardening
-- [ ] Harden auth, tenancy, isolation, and operator runbooks
-- [ ] Add release gates based on benchmark regression thresholds
-- [ ] Finalize packaging / backup / import-export / alerting paths
-- [ ] Lock truth-surface schemas and version benchmark / reward / experiment contracts
+- [x] Harden auth, tenancy, isolation, and operator runbooks
+- [x] Add release gates based on benchmark regression thresholds
+- [x] Finalize packaging / backup / import-export / alerting paths
+- [x] Lock truth-surface schemas and version benchmark / reward / experiment contracts

@@ -5,6 +5,13 @@ import json
 from pathlib import Path
 
 from .api import create_gateway, create_http_app, get_version
+from .hardening import (
+    build_alert_summary,
+    build_deployment_hardening_profile,
+    evaluate_release_gate,
+    export_product_bundle,
+    import_product_bundle,
+)
 from .operator_runtime import OperatorJobQueue, RetentionEnforcer, build_deployment_profile, build_operator_snapshot
 from .settings import AdvisorSettings
 
@@ -46,6 +53,23 @@ def build_parser() -> argparse.ArgumentParser:
     deployment_parser = subparsers.add_parser("deployment-profile", help="Print deployment profile guidance")
     deployment_parser.add_argument("--mode", choices=["single_tenant", "hosted"], default=None, help="Deployment mode override")
     deployment_parser.set_defaults(handler=_handle_deployment_profile)
+
+    hardening_parser = subparsers.add_parser("hardening-profile", help="Print finished-product hardening profile JSON")
+    hardening_parser.add_argument("--mode", choices=["single_tenant", "hosted"], default="single_tenant", help="Hardening mode")
+    hardening_parser.set_defaults(handler=_handle_hardening_profile)
+
+    release_gate_parser = subparsers.add_parser("release-gate", help="Evaluate a Phase 16 results report against release thresholds")
+    release_gate_parser.add_argument("--report-path", required=True, help="Path to Phase 16 results report JSON")
+    release_gate_parser.set_defaults(handler=_handle_release_gate)
+
+    export_bundle_parser = subparsers.add_parser("export-bundle", help="Export product state bundle")
+    export_bundle_parser.add_argument("--output-dir", required=True, help="Destination bundle directory")
+    export_bundle_parser.set_defaults(handler=_handle_export_bundle)
+
+    import_bundle_parser = subparsers.add_parser("import-bundle", help="Import previously exported product state bundle")
+    import_bundle_parser.add_argument("--bundle-path", required=True, help="Source bundle directory")
+    import_bundle_parser.add_argument("--target-root", required=True, help="Destination restore directory")
+    import_bundle_parser.set_defaults(handler=_handle_import_bundle)
 
     return parser
 
@@ -121,6 +145,38 @@ def _handle_deployment_profile(args) -> int:
         mode=args.mode or ("hosted" if settings.hosted_mode else "single_tenant"),
     )
     print(json.dumps(profile.model_dump(), ensure_ascii=False))
+    return 0
+
+
+def _handle_hardening_profile(args) -> int:
+    settings = AdvisorSettings.load()
+    state_root = Path(settings.trace_db_path).expanduser().parent
+    profile = build_deployment_hardening_profile(mode=args.mode, state_root=state_root)
+    print(json.dumps(profile.model_dump(), ensure_ascii=False))
+    return 0
+
+
+def _handle_release_gate(args) -> int:
+    report = json.loads(Path(args.report_path).expanduser().read_text(encoding="utf-8"))
+    verdict = evaluate_release_gate(report)
+    payload = {
+        "verdict": verdict,
+        "alerts": build_alert_summary(verdict),
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def _handle_export_bundle(args) -> int:
+    settings = AdvisorSettings.load()
+    bundle_path = export_product_bundle(output_dir=args.output_dir, settings=settings)
+    print(json.dumps({"bundle_path": bundle_path}, ensure_ascii=False))
+    return 0
+
+
+def _handle_import_bundle(args) -> int:
+    restored_root = import_product_bundle(bundle_path=args.bundle_path, target_root=args.target_root)
+    print(json.dumps({"restored_root": str(restored_root)}, ensure_ascii=False))
     return 0
 
 
