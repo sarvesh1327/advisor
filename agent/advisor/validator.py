@@ -9,6 +9,7 @@ class AdviceValidator:
         self.max_plan_steps = max_plan_steps
 
     def validate(self, advice: AdviceBlock) -> AdviceBlock:
+        # Validation trims output into a bounded, storage-safe shape without changing high-level intent.
         confidence = min(max(advice.confidence, 0.0), 1.0)
         return AdviceBlock(
             task_type=advice.task_type,

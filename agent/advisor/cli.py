@@ -11,6 +11,7 @@ except ImportError:
     uvicorn_run = None
 
 
+# Keep the CLI surface minimal; all real behavior should flow through API/gateway layers.
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="advisor", description="Advisor command-line interface")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -49,6 +50,7 @@ def _handle_version(args) -> int:
 
 
 def _handle_run(args) -> int:
+    # Emit machine-readable JSON so the CLI can feed larger agent pipelines.
     gateway = create_gateway()
     result = gateway.task_run(
         task_text=args.task_text,
@@ -82,6 +84,7 @@ def _parse_tool_limits(entries: list[str]) -> dict:
 
 
 def _coerce_scalar(value: str):
+    # CLI inputs arrive as strings; coerce only the obvious scalar cases.
     normalized = value.strip().lower()
     if normalized in {"true", "false"}:
         return normalized == "true"

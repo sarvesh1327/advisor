@@ -39,6 +39,7 @@ class ContextBuilder:
         branch: str | None = None,
         task_type_hint: str | None = None,
     ) -> AdvisorInputPacket:
+        # This builder is the current coding adapter until packet construction is split by domain.
         repo = Path(repo_path).expanduser().resolve()
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         task_type = task_type_hint or self._infer_task_type(task_text)
@@ -48,6 +49,7 @@ class ContextBuilder:
         failures = self.trace_store.find_recent_failures(task_text, str(repo), limit=self.max_failures)
         modules = self._modules_from_tree(tree_slice)
         constraints = self._constraints_from_task(task_text)
+        # The coding adapter still fills the legacy fields; schemas.py backfills the generic packet view.
         return AdvisorInputPacket(
             run_id=run_id,
             task_text=task_text,
@@ -77,6 +79,7 @@ class ContextBuilder:
     def _file_tree_slice(self, repo: Path) -> list[str]:
         items: list[str] = []
         for root, dirs, files in os.walk(repo):
+            # Prune generated directories early so they never pollute ranking.
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
             for name in sorted(files):
                 if name.startswith('.'):

@@ -6,6 +6,7 @@ from .settings import AdvisorSettings
 from .version import __version__
 
 
+# These helpers are the stable API layer used by CLI, tests, and external callers.
 def get_version() -> str:
     return __version__
 
@@ -32,6 +33,7 @@ def run_task(
     task_type_hint: str | None = None,
     system_prompt: str | None = None,
 ) -> AdvisorTaskRunResult:
+    # Create a default gateway lazily so callers can inject their own runtime/store in tests.
     active_gateway = gateway or create_gateway()
     return active_gateway.task_run(
         task_text=task_text,
@@ -47,4 +49,5 @@ def run_task(
 
 
 def create_http_app(*, settings: AdvisorSettings | None = None):
+    # HTTP creation stays thin so gateway behavior remains the single execution path.
     return create_app(settings=settings)

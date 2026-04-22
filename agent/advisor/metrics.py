@@ -18,6 +18,7 @@ def summarize_runs(store: AdvisorTraceStore) -> dict:
         touched = set(outcome.get("files_touched") or [])
         advised = {item.get("path") for item in advice.get("relevant_files") or [] if item.get("path")}
         if advised:
+            # This is a coarse offline proxy: did advice mention any file that execution touched?
             hit_scores.append(1.0 if touched & advised else 0.0)
         if outcome:
             retry_values.append(int(outcome.get("retries") or 0))
