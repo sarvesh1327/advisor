@@ -36,6 +36,20 @@ class RelevantSymbol(BaseModel):
     why: str
 
 
+class FocusTarget(BaseModel):
+    kind: str
+    locator: str
+    rationale: str
+    priority: int = 1
+
+
+class ExecutorInjectionPolicy(BaseModel):
+    strategy: Literal["prepend", "append"] = "prepend"
+    format: Literal["plain_text"] = "plain_text"
+    min_confidence: float = 0.0
+    include_confidence_note: bool = True
+
+
 class AdvisorTask(BaseModel):
     # Core task identity used across all domain adapters.
     domain: str = "coding"
@@ -158,6 +172,7 @@ class AdvisorInputPacket(BaseModel):
 
 class AdviceBlock(BaseModel):
     task_type: str
+    focus_targets: list[FocusTarget] = Field(default_factory=list)
     relevant_files: list[RelevantFile] = Field(default_factory=list)
     relevant_symbols: list[RelevantSymbol] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
@@ -166,6 +181,50 @@ class AdviceBlock(BaseModel):
     avoid: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     notes: str | None = None
+    injection_policy: ExecutorInjectionPolicy = Field(default_factory=ExecutorInjectionPolicy)
+
+    @model_validator(mode="after")
+    def populate_generic_advice_fields(self) -> "AdviceBlock":
+        # Keep generic focus targets canonical while compatibility fields remain populated.
+        if not self.focus_targets:
+            priority = 1
+            self.focus_targets = [
+                FocusTarget(
+                    kind="file",
+                    locator=item.path,
+                    rationale=item.why,
+                    priority=item.priority,
+                )
+                for item in self.relevant_files
+            ]
+            priority = max((item.priority for item in self.focus_targets), default=0) + 1
+            self.focus_targets.extend(
+                FocusTarget(
+                    kind="symbol",
+                    locator=f"{item.path}::{item.name}" if item.path else item.name,
+                    rationale=item.why,
+                    priority=priority + index,
+                )
+                for index, item in enumerate(self.relevant_symbols)
+            )
+        if not self.relevant_files:
+            self.relevant_files = [
+                RelevantFile(path=item.locator, why=item.rationale, priority=item.priority)
+                for item in self.focus_targets
+                if item.kind == "file"
+            ]
+        if not self.relevant_symbols:
+            self.relevant_symbols = []
+            for item in self.focus_targets:
+                if item.kind != "symbol":
+                    continue
+                path, _, name = item.locator.partition("::")
+                symbol_name = name or path
+                symbol_path = path if name else ""
+                self.relevant_symbols.append(
+                    RelevantSymbol(name=symbol_name, path=symbol_path, why=item.rationale)
+                )
+        return self
 
 
 class AdvisorOutcome(BaseModel):

@@ -172,6 +172,14 @@ class MLXAdvisorRuntime:
         return AdviceBlock.model_validate(
             {
                 "task_type": packet.task_type,
+                "focus_targets": [
+                    {
+                        "kind": "file",
+                        "locator": top_file,
+                        "rationale": "top candidate from repo scan",
+                        "priority": 1,
+                    }
+                ] if top_file else [],
                 "relevant_files": relevant_files,
                 "relevant_symbols": [],
                 "constraints": packet.constraints,
@@ -184,19 +192,31 @@ class MLXAdvisorRuntime:
         )
 
     def _format_prompt(self, packet) -> str:
-        # Keep legacy coding cues, but surface the generic packet so other adapters can share the same runtime.
+        # Keep the prompt generic-first so adapters only add domain-specific cues through packet data.
+        focus_targets = [
+            {
+                "kind": item.kind,
+                "locator": item.locator,
+                "rationale": item.description,
+                "priority": index + 1,
+            }
+            for index, item in enumerate(packet.artifacts)
+        ]
         json_template = (
-            '{"task_type": "feature", "relevant_files": [{"path": "src/app/page.tsx", '
-            '"why": "landing page entrypoint", "priority": 1}], "relevant_symbols": [], '
-            '"constraints": [], "likely_failure_modes": [], "recommended_plan": '
-            '["edit src/app/page.tsx"], "avoid": [], "confidence": 0.8, '
-            '"notes": "brief note"}'
+            '{"task_type": "execution", "focus_targets": '
+            '[{"kind": "document", "locator": "docs/brief.md", "rationale": "task brief", "priority": 1}], '
+            '"relevant_files": [], "relevant_symbols": [], "constraints": [], '
+            '"likely_failure_modes": ["acting on stale context"], "recommended_plan": '
+            '["review the brief", "run a focused verification step"], "avoid": ["broad unverified changes"], '
+            '"confidence": 0.8, "notes": "brief note", '
+            '"injection_policy": {"strategy": "prepend", "format": "plain_text", '
+            '"min_confidence": 0.0, "include_confidence_note": true}}'
         )
         return (
-            "You are a code-execution advisor that emits JSON only.\n"
-            "Return exactly one JSON object with keys: task_type, relevant_files, "
-            "relevant_symbols, constraints, likely_failure_modes, recommended_plan, "
-            "avoid, confidence, notes.\n"
+            "You are an execution advisor that emits JSON only.\n"
+            "Return exactly one JSON object with keys: task_type, focus_targets, "
+            "relevant_files, relevant_symbols, constraints, likely_failure_modes, "
+            "recommended_plan, avoid, confidence, notes, injection_policy.\n"
             "Rules:\n"
             "- Output must start with { and end with }\n"
             "- Do not include markdown fences\n"
@@ -217,6 +237,7 @@ class MLXAdvisorRuntime:
             f"CONSTRAINTS: {packet.constraints}\n"
             f"ACCEPTANCE_CRITERIA: {packet.acceptance_criteria}\n"
             f"DOMAIN_CAPABILITIES: {[item.model_dump() for item in packet.domain_capabilities]}\n"
+            f"FOCUS_TARGETS: {focus_targets}\n"
             f"JSON_TEMPLATE: {json_template}\n"
         )
 
@@ -259,6 +280,27 @@ class MLXAdvisorRuntime:
                     out.append(str(item))
             return out
 
+        focus_targets = []
+        for idx, item in enumerate(payload.get("focus_targets") or [], start=1):
+            if isinstance(item, str):
+                focus_targets.append(
+                    {
+                        "kind": "artifact",
+                        "locator": item,
+                        "rationale": "advisor-selected focus target",
+                        "priority": idx,
+                    }
+                )
+            elif isinstance(item, dict) and item.get("locator"):
+                focus_targets.append(
+                    {
+                        "kind": str(item.get("kind") or "artifact"),
+                        "locator": item["locator"],
+                        "rationale": item.get("rationale") or item.get("why") or item.get("reason") or "advisor-selected focus target",
+                        "priority": int(item.get("priority") or idx),
+                    }
+                )
+
         relevant_files = []
         for idx, item in enumerate(payload.get("relevant_files") or [], start=1):
             if isinstance(item, str):
@@ -297,8 +339,9 @@ class MLXAdvisorRuntime:
                     }
                 )
 
-        return {
+        coerced_payload = {
             "task_type": payload.get("task_type") or "feature",
+            "focus_targets": focus_targets,
             "relevant_files": relevant_files,
             "relevant_symbols": relevant_symbols,
             "constraints": _to_strings(payload.get("constraints") or []),
@@ -310,3 +353,6 @@ class MLXAdvisorRuntime:
             "confidence": float(payload.get("confidence") or 0.0),
             "notes": str(payload.get("notes") or "") or None,
         }
+        if payload.get("injection_policy") is not None:
+            coerced_payload["injection_policy"] = payload["injection_policy"]
+        return coerced_payload

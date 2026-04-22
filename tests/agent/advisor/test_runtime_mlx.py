@@ -120,10 +120,14 @@ def test_runtime_prompt_includes_generic_packet_fields():
 
     prompt = runtime._format_prompt(_packet())
 
+    assert "You are an execution advisor" in prompt
+    assert "src/app/page.tsx" not in prompt
+    assert "edit src/app/page.tsx" not in prompt
     assert "TASK_DOMAIN: coding" in prompt
     assert "ARTIFACTS:" in prompt
     assert "HISTORY:" in prompt
     assert "DOMAIN_CAPABILITIES:" in prompt
+    assert "FOCUS_TARGETS" in prompt
 
 
 

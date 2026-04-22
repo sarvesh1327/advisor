@@ -7,6 +7,7 @@ from hashlib import sha256
 from typing import Any
 
 from .context_builder import ContextBuilder
+from .injector import render_advice_for_user_context
 from .runtime_mlx import MLXAdvisorRuntime
 from .schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from .settings import AdvisorSettings
@@ -98,6 +99,7 @@ class AdvisorGateway:
             advice = generate_advice(packet)
         latency_ms = int((time.perf_counter() - started) * 1000)
         safe_advice = self.validator.validate(advice)
+        injected_rendered_advice = render_advice_for_user_context(safe_advice)
         # Prompt hash tracks the effective task/model pair used for the stored advice record.
         prompt_hash = sha256(
             (packet.task_text + self.settings.model_version).encode()
@@ -109,6 +111,8 @@ class AdvisorGateway:
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
             validated=True,
+            injected_advice=safe_advice,
+            injected_rendered_advice=injected_rendered_advice,
         )
         return AdvisorTaskRunResult(
             run_id=run_id,

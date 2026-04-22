@@ -8,7 +8,9 @@ from agent.advisor.schemas import (
     AdvisorInputPacket,
     AdvisorTask,
     CandidateFile,
+    ExecutorInjectionPolicy,
     FailureSignal,
+    FocusTarget,
     RepoSummary,
 )
 
@@ -87,3 +89,44 @@ def test_advisor_input_packet_backfills_domain_capabilities():
             supports_symbol_regions=False,
         )
     ]
+
+
+def test_advice_block_backfills_generic_focus_targets_from_compat_fields():
+    advice = AdviceBlock(
+        task_type="bugfix",
+        relevant_files=[{"path": "main.py", "why": "entrypoint", "priority": 1}],
+        relevant_symbols=[{"name": "main", "path": "main.py", "why": "dispatches execution"}],
+    )
+
+    assert advice.focus_targets == [
+        FocusTarget(kind="file", locator="main.py", rationale="entrypoint", priority=1),
+        FocusTarget(kind="symbol", locator="main.py::main", rationale="dispatches execution", priority=2),
+    ]
+
+
+def test_advice_block_backfills_compat_fields_from_generic_focus_targets():
+    advice = AdviceBlock(
+        task_type="research",
+        focus_targets=[
+            FocusTarget(kind="file", locator="docs/plan.md", rationale="source of truth", priority=1),
+            FocusTarget(kind="symbol", locator="agent.py::run", rationale="execution entrypoint", priority=2),
+        ],
+    )
+
+    assert [item.model_dump() for item in advice.relevant_files] == [
+        {"path": "docs/plan.md", "why": "source of truth", "priority": 1}
+    ]
+    assert [item.model_dump() for item in advice.relevant_symbols] == [
+        {"name": "run", "path": "agent.py", "why": "execution entrypoint"}
+    ]
+
+
+def test_advice_block_exposes_explicit_executor_injection_policy():
+    advice = AdviceBlock(task_type="bugfix")
+
+    assert advice.injection_policy == ExecutorInjectionPolicy(
+        strategy="prepend",
+        format="plain_text",
+        min_confidence=0.0,
+        include_confidence_note=True,
+    )

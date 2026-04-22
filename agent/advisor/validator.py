@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .schemas import AdviceBlock, RelevantFile, RelevantSymbol
+from .schemas import AdviceBlock, FocusTarget, RelevantFile, RelevantSymbol
 
 
 class AdviceValidator:
@@ -13,6 +13,7 @@ class AdviceValidator:
         confidence = min(max(advice.confidence, 0.0), 1.0)
         return AdviceBlock(
             task_type=advice.task_type,
+            focus_targets=self._dedupe_focus_targets(advice.focus_targets)[: self.max_items],
             relevant_files=self._dedupe_files(advice.relevant_files)[: self.max_items],
             relevant_symbols=self._dedupe_symbols(advice.relevant_symbols)[: self.max_items],
             constraints=self._trim(advice.constraints, self.max_items),
@@ -21,7 +22,26 @@ class AdviceValidator:
             avoid=self._trim(advice.avoid, self.max_items),
             confidence=confidence,
             notes=(advice.notes or "")[:500] or None,
+            injection_policy=advice.injection_policy,
         )
+
+    def _dedupe_focus_targets(self, items: list[FocusTarget]) -> list[FocusTarget]:
+        out = []
+        seen = set()
+        for item in items:
+            key = (item.kind, item.locator)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                FocusTarget(
+                    kind=item.kind[:40],
+                    locator=item.locator[:240],
+                    rationale=item.rationale[:240],
+                    priority=item.priority,
+                )
+            )
+        return out
 
     def _trim(self, items: list[str], limit: int) -> list[str]:
         deduped = []

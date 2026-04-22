@@ -54,6 +54,9 @@ class AdvisorTraceStore:
                   advisor_model TEXT NOT NULL,
                   prompt_hash TEXT NOT NULL,
                   advice_json TEXT NOT NULL,
+                  injected_advice_json TEXT,
+                  injected_rendered_advice TEXT,
+                  injection_policy_json TEXT,
                   latency_ms INTEGER NOT NULL,
                   validated INTEGER NOT NULL
                 );
@@ -96,6 +99,16 @@ class AdvisorTraceStore:
             ):
                 if column_name not in columns:
                     conn.execute(f"ALTER TABLE run_contexts ADD COLUMN {column_name} TEXT")
+            advice_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(advice_records)").fetchall()
+            }
+            for column_name in (
+                "injected_advice_json",
+                "injected_rendered_advice",
+                "injection_policy_json",
+            ):
+                if column_name not in advice_columns:
+                    conn.execute(f"ALTER TABLE advice_records ADD COLUMN {column_name} TEXT")
 
     def record_task_run(
         self,
@@ -106,6 +119,8 @@ class AdvisorTraceStore:
         latency_ms: int,
         prompt_hash: str,
         validated: bool = True,
+        injected_advice: AdviceBlock | dict | None = None,
+        injected_rendered_advice: str | None = None,
     ) -> None:
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
@@ -152,14 +167,24 @@ class AdvisorTraceStore:
             # Advice is stored after validation so downstream exports only see normalized output.
             conn.execute(
                 """
-                INSERT OR REPLACE INTO advice_records(run_id, advisor_model, prompt_hash, advice_json, latency_ms, validated)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO advice_records(
+                    run_id, advisor_model, prompt_hash, advice_json, injected_advice_json,
+                    injected_rendered_advice, injection_policy_json, latency_ms, validated
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     packet.run_id,
                     advisor_model,
                     prompt_hash,
                     advice.model_dump_json(),
+                    json.dumps(
+                        injected_advice.model_dump()
+                        if isinstance(injected_advice, AdviceBlock)
+                        else injected_advice or advice.model_dump()
+                    ),
+                    injected_rendered_advice,
+                    advice.injection_policy.model_dump_json(),
                     latency_ms,
                     1 if validated else 0,
                 ),
@@ -211,7 +236,8 @@ class AdvisorTraceStore:
                 SELECT r.*, rc.repo_summary_json, rc.candidate_files_json, rc.recent_failures_json,
                        rc.constraints_json, rc.tool_limits_json, rc.acceptance_criteria_json, rc.token_budget,
                        rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
-                       ar.advice_json, ar.advisor_model, ar.latency_ms,
+                       ar.advice_json, ar.injected_advice_json, ar.injected_rendered_advice,
+                       ar.injection_policy_json, ar.advisor_model, ar.latency_ms,
                        ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
                 FROM runs r
                 LEFT JOIN run_contexts rc ON rc.run_id = r.run_id
@@ -232,7 +258,8 @@ class AdvisorTraceStore:
                 SELECT r.*, rc.repo_summary_json, rc.candidate_files_json, rc.recent_failures_json,
                        rc.constraints_json, rc.tool_limits_json, rc.acceptance_criteria_json, rc.token_budget,
                        rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
-                       ar.advice_json, ar.advisor_model, ar.latency_ms,
+                       ar.advice_json, ar.injected_advice_json, ar.injected_rendered_advice,
+                       ar.injection_policy_json, ar.advisor_model, ar.latency_ms,
                        ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
                 FROM runs r
                 LEFT JOIN run_contexts rc ON rc.run_id = r.run_id
@@ -250,6 +277,9 @@ class AdvisorTraceStore:
             "task_type": row["task_type"],
             "repo_path": row["repo_path"],
             "advice": json.loads(row["advice_json"]) if row["advice_json"] else None,
+            "injected_advice": json.loads(row["injected_advice_json"]) if row["injected_advice_json"] else None,
+            "injected_rendered_advice": row["injected_rendered_advice"],
+            "injection_policy": json.loads(row["injection_policy_json"]) if row["injection_policy_json"] else None,
             "outcome": {
                 "status": row["status"],
                 "files_touched": json.loads(row["files_touched_json"]) if row["files_touched_json"] else [],
