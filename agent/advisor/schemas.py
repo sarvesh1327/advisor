@@ -237,6 +237,26 @@ class AdvisorOutcome(BaseModel):
     summary: str | None = None
 
 
+class RewardComponentScores(BaseModel):
+    task_success: float = 0.0
+    efficiency: float = 0.0
+    targeting_quality: float = 0.0
+    constraint_compliance: float = 0.0
+    human_usefulness: float = 0.0
+
+
+class RewardLabel(BaseModel):
+    run_id: str
+    components: RewardComponentScores
+    total_reward: float
+    quality_score: float
+    dataset_split: str = "train"
+    example_type: Literal["positive", "negative", "neutral"] = "neutral"
+    hard_case_bucket: str | None = None
+    reward_version: str = "phase8-v1"
+    notes: list[str] = Field(default_factory=list)
+
+
 class AdvisorTaskRunResult(BaseModel):
     run_id: str
     advisor_input_packet: AdvisorInputPacket

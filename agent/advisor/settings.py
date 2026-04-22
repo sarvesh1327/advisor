@@ -4,7 +4,9 @@ import os
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+from .reward_model import RewardWeights
 
 
 def get_default_advisor_home() -> Path:
@@ -44,6 +46,8 @@ class AdvisorSettings(BaseModel):
     inference_timeout_seconds: int = 20
     warm_load_on_start: bool = False
     enable_fallback_runtime: bool = True
+    reward_preset: str = "balanced"
+    reward_weights_config: dict[str, float] = Field(default_factory=dict, alias="reward_weights")
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "AdvisorSettings":
@@ -63,12 +67,70 @@ class AdvisorSettings(BaseModel):
             raise ValueError("max_retries must be >= 0")
         if self.inference_timeout_seconds <= 0:
             raise ValueError("inference_timeout_seconds must be > 0")
+        if self.reward_preset not in self.reward_presets():
+            raise ValueError(f"reward_preset must be one of {sorted(self.reward_presets())}")
+        for name, value in self.reward_weights_config.items():
+            if name not in {"task_success", "efficiency", "targeting_quality", "constraint_compliance", "human_usefulness"}:
+                raise ValueError(f"unknown reward weight '{name}'")
+            if value < 0.0:
+                raise ValueError(f"reward weight '{name}' must be >= 0")
         return self
+
+    @classmethod
+    def reward_presets(cls) -> dict[str, RewardWeights]:
+        return {
+            "balanced": RewardWeights(
+                task_success=0.35,
+                efficiency=0.15,
+                targeting_quality=0.2,
+                constraint_compliance=0.2,
+                human_usefulness=0.1,
+            ),
+            "conservative": RewardWeights(
+                task_success=0.45,
+                efficiency=0.1,
+                targeting_quality=0.2,
+                constraint_compliance=0.2,
+                human_usefulness=0.05,
+            ),
+            "human-first": RewardWeights(
+                task_success=0.25,
+                efficiency=0.1,
+                targeting_quality=0.2,
+                constraint_compliance=0.2,
+                human_usefulness=0.25,
+            ),
+        }
+
+    def reward_weights(self) -> RewardWeights:
+        preset = self.reward_presets()[self.reward_preset]
+        overrides = self.reward_weights_config or {}
+        if not overrides:
+            return preset
+        merged = {
+            "task_success": overrides.get("task_success", preset.task_success),
+            "efficiency": overrides.get("efficiency", preset.efficiency),
+            "targeting_quality": overrides.get("targeting_quality", preset.targeting_quality),
+            "constraint_compliance": overrides.get("constraint_compliance", preset.constraint_compliance),
+            "human_usefulness": overrides.get("human_usefulness", preset.human_usefulness),
+        }
+        return RewardWeights(**merged)
 
     @classmethod
     def from_env(cls) -> "AdvisorSettings":
         advisor_home = get_default_advisor_home()
         default_db = advisor_home / "advisor.db"
+        reward_weights = {
+            key: float(os.getenv(env_name))
+            for key, env_name in {
+                "task_success": "ADVISOR_REWARD_TASK_SUCCESS",
+                "efficiency": "ADVISOR_REWARD_EFFICIENCY",
+                "targeting_quality": "ADVISOR_REWARD_TARGETING_QUALITY",
+                "constraint_compliance": "ADVISOR_REWARD_CONSTRAINT_COMPLIANCE",
+                "human_usefulness": "ADVISOR_REWARD_HUMAN_USEFULNESS",
+            }.items()
+            if os.getenv(env_name) is not None
+        }
         return cls(
             enabled=os.getenv("ADVISOR_ENABLED", "0").lower() in {"1", "true", "yes", "on"},
             trace_db_path=os.getenv("ADVISOR_TRACE_DB", str(default_db)),
@@ -94,6 +156,8 @@ class AdvisorSettings(BaseModel):
             warm_load_on_start=os.getenv("ADVISOR_WARM_LOAD_ON_START", "0").lower() in {"1", "true", "yes", "on"},
             enable_fallback_runtime=os.getenv("ADVISOR_ENABLE_FALLBACK_RUNTIME", "1").lower()
             in {"1", "true", "yes", "on"},
+            reward_preset=os.getenv("ADVISOR_REWARD_PRESET", "balanced"),
+            reward_weights=reward_weights,
         )
 
     @classmethod
@@ -128,4 +192,6 @@ class AdvisorSettings(BaseModel):
             "inference_timeout_seconds": self.inference_timeout_seconds,
             "warm_load_on_start": self.warm_load_on_start,
             "enable_fallback_runtime": self.enable_fallback_runtime,
+            "reward_preset": self.reward_preset,
+            "reward_weights": self.reward_weights().__dict__,
         }
