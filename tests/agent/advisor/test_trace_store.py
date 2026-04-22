@@ -1,7 +1,12 @@
 from agent.advisor.schemas import (
     AdviceBlock,
+    AdvisorArtifact,
+    AdvisorCapabilityDescriptor,
+    AdvisorContext,
+    AdvisorHistoryEntry,
     AdvisorInputPacket,
     AdvisorOutcome,
+    AdvisorTask,
     CandidateFile,
     RepoSummary,
 )
@@ -42,3 +47,124 @@ def test_trace_store_roundtrip(tmp_path):
     assert row["input"]["task"]["domain"] == "coding"
     assert row["input"]["artifacts"][0]["locator"] == "main.py"
     assert row["input"]["context"]["metadata"]["repo"]["path"] == "/tmp/repo"
+
+
+def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    packet = AdvisorInputPacket(
+        run_id="run-generic",
+        task_text="update the hero layout from the latest screenshot",
+        task_type="ui-update",
+        repo={"path": "/tmp/ui", "branch": "main", "dirty": True},
+        repo_summary=RepoSummary(
+            modules=["ui"],
+            hotspots=["ui/screens/home.png"],
+            file_tree_slice=["ui/screens/home.png", "ui/layouts/home.json"],
+        ),
+        candidate_files=[CandidateFile(path="ui/screens/home.png", reason="changed screenshot", score=0.8)],
+        recent_failures=[],
+        constraints=["preserve spacing scale"],
+        tool_limits={"image_read": True},
+        acceptance_criteria=["hero matches updated mock"],
+        token_budget=700,
+        task=AdvisorTask(domain="image-ui", text="update the hero layout from the latest screenshot", type="ui-update"),
+        context=AdvisorContext(
+            summary="image-ui task context",
+            metadata={"changed_files": ["ui/screens/home.png"], "packed": {"artifacts": 1, "history": 0}},
+        ),
+        artifacts=[
+            AdvisorArtifact(
+                kind="image",
+                locator="ui/screens/home.png",
+                description="latest screen capture",
+                metadata={"changed": True, "region_hint": "hero"},
+                score=1.2,
+            )
+        ],
+        history=[
+            AdvisorHistoryEntry(
+                kind="prior-attempt",
+                summary="previous pass drifted from the spacing grid",
+                locator="ui/layouts/home.json",
+                metadata={"region_hint": "hero"},
+            )
+        ],
+        domain_capabilities=[
+            AdvisorCapabilityDescriptor(
+                domain="image-ui",
+                supported_artifact_kinds=["image", "layout"],
+                supported_packet_fields=["task", "context", "artifacts", "constraints", "history", "acceptance_criteria"],
+                supports_changed_artifacts=True,
+                supports_symbol_regions=True,
+            )
+        ],
+    )
+
+    store.record_task_run(
+        packet,
+        AdviceBlock(task_type="ui-update", recommended_plan=["inspect ui/screens/home.png"], confidence=0.7),
+        advisor_model="advisor-test",
+        latency_ms=12,
+        prompt_hash="def",
+    )
+
+    replay = store.get_run("run-generic")
+
+    assert replay is not None
+    assert replay["input"]["task"]["domain"] == "image-ui"
+    assert replay["input"]["context"]["summary"] == "image-ui task context"
+    assert replay["input"]["artifacts"] == [
+        {
+            "kind": "image",
+            "locator": "ui/screens/home.png",
+            "description": "latest screen capture",
+            "metadata": {"changed": True, "region_hint": "hero"},
+            "score": 1.2,
+        }
+    ]
+    assert replay["input"]["history"][0]["kind"] == "prior-attempt"
+    assert replay["input"]["history"][0]["metadata"]["region_hint"] == "hero"
+    assert replay["input"]["domain_capabilities"][0]["supports_symbol_regions"] is True
+
+
+def test_trace_store_prefers_prior_failures_with_changed_file_overlap(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    repo_path = "/tmp/ui"
+    for run_id, task_text, files_touched, summary in (
+        ("run-match", "revise product copy", ["ui/mockups/home.png"], "copy change broke the hero alignment"),
+        ("run-token", "refresh hero image layout", ["docs/brief.md"], "hero image still misaligned"),
+    ):
+        store.record_task_run(
+            AdvisorInputPacket(
+                run_id=run_id,
+                task_text=task_text,
+                task_type="bugfix",
+                repo={"path": repo_path, "branch": "main", "dirty": False},
+                repo_summary=RepoSummary(modules=["ui"], hotspots=files_touched, file_tree_slice=files_touched),
+                candidate_files=[CandidateFile(path=files_touched[0], reason="match", score=0.7)],
+                recent_failures=[],
+                constraints=[],
+                tool_limits={},
+                acceptance_criteria=[],
+                token_budget=600,
+            ),
+            AdviceBlock(task_type="bugfix", recommended_plan=["inspect file"], confidence=0.5),
+            advisor_model="advisor-test",
+            latency_ms=5,
+            prompt_hash=f"hash-{run_id}",
+        )
+        store.record_outcome(
+            AdvisorOutcome(run_id=run_id, status="failure", files_touched=files_touched, summary=summary)
+        )
+
+    failures = store.find_recent_failures(
+        "refresh the hero image",
+        repo_path,
+        limit=2,
+        changed_files=["ui/mockups/home.png"],
+    )
+
+    assert [failure.summary for failure in failures] == [
+        "copy change broke the hero alignment",
+        "hero image still misaligned",
+    ]

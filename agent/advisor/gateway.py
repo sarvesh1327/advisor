@@ -73,6 +73,7 @@ class AdvisorGateway:
         task_id: str | None = None,
         task_type_hint: str | None = None,
         system_prompt: str | None = None,
+        changed_files: list[str] | None = None,
     ) -> AdvisorTaskRunResult:
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         packet = self.context_builder.build(
@@ -83,6 +84,7 @@ class AdvisorGateway:
             run_id=run_id,
             branch=branch,
             task_type_hint=task_type_hint,
+            changed_files=changed_files or [],
         )
         packet.repo["session_id"] = session_id
         packet.repo["task_id"] = task_id
@@ -143,6 +145,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             task_id=req.task_id,
             task_type_hint=req.task_type_hint,
             system_prompt=req.system_prompt,
+            changed_files=req.changed_files,
         )
 
     return app

@@ -2,6 +2,7 @@
 from agent.advisor.schemas import (
     AdviceBlock,
     AdvisorArtifact,
+    AdvisorCapabilityDescriptor,
     AdvisorContext,
     AdvisorHistoryEntry,
     AdvisorInputPacket,
@@ -60,3 +61,29 @@ def test_advisor_input_packet_roundtrip():
     assert dumped["task"]["domain"] == "coding"
     assert dumped["artifacts"][0]["locator"] == "main.py"
     assert dumped["history"][0]["kind"] == "wrong-file"
+
+
+def test_advisor_input_packet_backfills_domain_capabilities():
+    packet = AdvisorInputPacket(
+        run_id="run-1",
+        task_text="fix cli bug",
+        task_type="bugfix",
+        repo={"path": "/tmp/repo", "branch": "main", "dirty": False},
+        repo_summary=RepoSummary(modules=["app"], hotspots=["main.py"], file_tree_slice=["main.py"]),
+        candidate_files=[CandidateFile(path="main.py", reason="task token match", score=0.8)],
+        recent_failures=[],
+        constraints=[],
+        tool_limits={"write_allowed": True},
+        acceptance_criteria=["tests pass"],
+        token_budget=1200,
+    )
+
+    assert packet.domain_capabilities == [
+        AdvisorCapabilityDescriptor(
+            domain="coding",
+            supported_artifact_kinds=["file"],
+            supported_packet_fields=["task", "context", "artifacts", "constraints", "history", "acceptance_criteria"],
+            supports_changed_artifacts=True,
+            supports_symbol_regions=False,
+        )
+    ]

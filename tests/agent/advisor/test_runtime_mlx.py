@@ -115,6 +115,18 @@ def test_runtime_builds_chat_prompt_with_explicit_override():
 
 
 
+def test_runtime_prompt_includes_generic_packet_fields():
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+
+    prompt = runtime._format_prompt(_packet())
+
+    assert "TASK_DOMAIN: coding" in prompt
+    assert "ARTIFACTS:" in prompt
+    assert "HISTORY:" in prompt
+    assert "DOMAIN_CAPABILITIES:" in prompt
+
+
+
 def test_runtime_raises_timeout_error_when_generation_exceeds_limit(monkeypatch):
     def fake_load(_model_name):
         return SimpleNamespace(), StubTokenizer()

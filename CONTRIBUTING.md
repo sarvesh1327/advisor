@@ -39,6 +39,7 @@ ruff check .
 - update README/docs when public usage changes
 - treat `docs/PAPER_FOUNDATION.md` as a design constraint, not optional reading
 - prefer generic advisor abstractions in the core and isolate coding-only logic behind adapters or extension fields
+- treat generic packet/advice/replay state as canonical whenever a generic equivalent exists
 - when adding new evaluation or execution paths, make sure they preserve replayability and produce reward-usable signals
 
 ## Pull requests

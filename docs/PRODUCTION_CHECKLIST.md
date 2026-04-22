@@ -36,13 +36,15 @@ Core rule:
 
 ## Phase 5 — Generic packet and context engine
 - [ ] Split core advisor abstractions from coding-specific packet builders
-- [ ] Define a domain-agnostic task packet schema (`task`, `context`, `artifacts`, `constraints`, `history`, `acceptance_criteria`)
-- [ ] Add a coding adapter that maps repos/files/failures into the generic packet
+- [ ] Make the generic packet (`task`, `context`, `artifacts`, `constraints`, `history`, `acceptance_criteria`, `domain_capabilities`) the canonical packet surface
+- [ ] Keep coding-only packet fields as compatibility fields or adapter extensions, not the primary abstraction
+- [x] Add a coding adapter that maps repos/files/failures into the generic packet
 - [ ] Add an image-or-UI adapter that maps references/screenshots/layout constraints into the generic packet
-- [ ] Add a research-or-writing adapter that maps sources/notes/objectives into the generic packet
-- [ ] Add domain capability descriptors so runtimes know which packet fields they can use
+- [x] Add a research-or-writing adapter that maps sources/notes/objectives into the generic packet
+- [x] Add domain capability descriptors so runtimes know which packet fields they can use
+- [ ] Move canonical trace/replay storage toward generic packet fields rather than coding-only fields
 - [ ] Improve candidate artifact ranking within adapters
-- [ ] Add changed-artifact awareness
+- [x] Add changed-artifact awareness
 - [ ] Add symbol/region extraction hooks where the domain supports them
 - [ ] Improve retrieval of recent failures / prior attempts
 - [ ] Handle large task contexts more predictably with budgeted packing
@@ -50,17 +52,20 @@ Core rule:
 
 ## Phase 6 — Advice schema and injection layer
 - [ ] Define a generic advice schema with domain-neutral fields (`focus_targets`, `recommended_plan`, `avoid`, `likely_failure_modes`, `confidence`, `notes`)
+- [ ] Make the generic advice schema the canonical stored/rendered form
 - [ ] Preserve coding-specific convenience fields only as adapter extensions, not core requirements
 - [ ] Add advice rendering templates for different executor types (chat model, agent loop, API client, human operator)
 - [ ] Add prompt builders that inject advice without assuming a coding workflow
+- [ ] Remove coding-first examples and wording from the default runtime prompt unless supplied by a coding adapter
 - [ ] Add executor-side policy for how advice is prepended, merged, or gated
 - [ ] Add structured trace capture for exactly what advice was injected into each executor run
 - [ ] Add calibration guidance for confidence and abstention behavior
 
 ## Phase 7 — Evaluation and replay
 - [ ] Add golden eval fixtures for each supported domain
-- [ ] Define fixture schema with frozen input packet, expected good guidance targets, and anti-targets
-- [ ] Add offline steering scorer for file/artifact targeting, plan quality, failure-mode quality, and noisy-target rate
+- [ ] Define fixture schema with frozen generic packet input, expected good guidance targets, and anti-targets
+- [ ] Add offline steering scorer for artifact targeting, plan quality, failure-mode quality, and noisy-target rate
+- [ ] Make replay operate on the canonical generic packet, not coding-only trace assumptions
 - [ ] Add replay harness for stored traces
 - [ ] Re-run current advisor versions against historical packets and compare against prior advice and fixture labels
 - [ ] Measure no-advisor vs advisor executor behavior on the same tasks with the same black-box model
@@ -69,7 +74,7 @@ Core rule:
 - [ ] Add regression-oriented eval docs and locked hard-case suites
 
 ## Phase 8 — Reward system and training data pipeline
-- [ ] Define the reward model inputs from executor outcomes, verifier results, human ratings, and trajectory features
+- [ ] Define the reward model inputs from canonical packet/advice/executor/verifier state plus human ratings and trajectory features
 - [ ] Implement reward computation for both offline replay and live runs
 - [ ] Add normalized reward components (`task_success`, `efficiency`, `targeting_quality`, `constraint_compliance`, `human_usefulness`)
 - [ ] Add curation flow for exported traces and reward-labeled examples
@@ -91,6 +96,7 @@ Core rule:
 
 ## Phase 10 — Orchestration and live product loop
 - [ ] Add a first-class runner for advisor -> executor -> verifier -> reward capture
+- [ ] Make the canonical lineage generic-packet-first rather than coding-trace-first
 - [ ] Add pluggable executor interfaces for frontier chat APIs, coding agents, and future domain-specific workers
 - [ ] Add verifier interfaces for build/test checks, screenshot comparison, rubric graders, and human review
 - [ ] Persist full run lineage linking packet, advice, executor output, verifier output, and reward

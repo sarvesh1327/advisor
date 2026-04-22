@@ -5,12 +5,21 @@ import re
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Protocol
 
-from .schemas import AdvisorInputPacket, CandidateFile, RepoSummary
+from .coding_adapter import CodingContextAdapter
+from .image_adapter import ImageUIContextAdapter
+from .research_adapter import ResearchContextAdapter
+from .schemas import AdvisorInputPacket, CandidateFile
 from .trace_store import AdvisorTraceStore
 
 _SKIP_DIRS = {".git", ".next", ".turbo", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache"}
 _ENTRYPOINT_FILENAMES = {"main.py", "app.py", "server.py", "gateway.py", "cli.py", "api.py"}
+
+
+class PacketAdapter(Protocol):
+    def build_packet(self, **kwargs) -> AdvisorInputPacket:
+        ...
 
 
 class ContextBuilder:
@@ -21,12 +30,20 @@ class ContextBuilder:
         max_candidate_files: int = 8,
         max_failures: int = 5,
         token_budget: int = 1800,
+        packet_adapter: PacketAdapter | None = None,
     ):
         self.trace_store = trace_store
         self.max_tree_entries = max_tree_entries
         self.max_candidate_files = max_candidate_files
         self.max_failures = max_failures
         self.token_budget = token_budget
+        self.default_packet_adapter = packet_adapter
+        self.packet_adapter = packet_adapter or CodingContextAdapter(token_budget=token_budget)
+        self.adapter_registry = {
+            "coding": CodingContextAdapter(token_budget=token_budget),
+            "research-writing": ResearchContextAdapter(token_budget=token_budget),
+            "image-ui": ImageUIContextAdapter(token_budget=token_budget),
+        }
 
     def build(
         self,
@@ -38,31 +55,38 @@ class ContextBuilder:
         run_id: str | None = None,
         branch: str | None = None,
         task_type_hint: str | None = None,
+        changed_files: list[str] | None = None,
     ) -> AdvisorInputPacket:
-        # This builder is the current coding adapter until packet construction is split by domain.
         repo = Path(repo_path).expanduser().resolve()
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         task_type = task_type_hint or self._infer_task_type(task_text)
         branch = branch or self._git_branch(repo)
         tree_slice = self._file_tree_slice(repo)
         candidates = self._candidate_files(task_text, tree_slice)
-        failures = self.trace_store.find_recent_failures(task_text, str(repo), limit=self.max_failures)
-        modules = self._modules_from_tree(tree_slice)
+        failures = self.trace_store.find_recent_failures(
+            task_text,
+            str(repo),
+            limit=self.max_failures,
+            changed_files=changed_files or [],
+        )
         constraints = self._constraints_from_task(task_text)
-        # The coding adapter still fills the legacy fields; schemas.py backfills the generic packet view.
-        return AdvisorInputPacket(
+        adapter = self._select_adapter(task_text=task_text, task_type=task_type, tool_limits=tool_limits)
+        packet = adapter.build_packet(
             run_id=run_id,
             task_text=task_text,
             task_type=task_type,
             repo={"path": str(repo), "branch": branch, "dirty": self._is_dirty(repo)},
-            repo_summary=RepoSummary(modules=modules, hotspots=[c.path for c in candidates[:3]], file_tree_slice=tree_slice),
+            file_tree_slice=tree_slice,
             candidate_files=candidates,
             recent_failures=failures,
             constraints=constraints,
             tool_limits=tool_limits,
             acceptance_criteria=acceptance_criteria or [],
-            token_budget=self.token_budget,
+            changed_files=changed_files or [],
         )
+        if isinstance(packet, AdvisorInputPacket):
+            return self._pack_packet(packet)
+        return packet
 
     def _infer_task_type(self, task_text: str) -> str:
         text = task_text.lower()
@@ -74,7 +98,21 @@ class ContextBuilder:
             return "review"
         if any(tok in text for tok in ("research", "investigate")):
             return "research"
+        if any(tok in text for tok in ("image", "screenshot", "mockup", "visual")):
+            return "ui-update"
         return "feature"
+
+    def _select_adapter(self, *, task_text: str, task_type: str, tool_limits: dict) -> PacketAdapter:
+        if self.default_packet_adapter is not None:
+            return self.packet_adapter
+        text = task_text.lower()
+        if task_type in {"research", "analysis"} or any(tok in text for tok in ("research", "sources", "citations", "notes")):
+            return self.adapter_registry["research-writing"]
+        if task_type in {"ui-update", "image"} or tool_limits.get("image_read") or any(
+            tok in text for tok in ("image", "screenshot", "mockup", "visual")
+        ):
+            return self.adapter_registry["image-ui"]
+        return self.adapter_registry["coding"]
 
     def _file_tree_slice(self, repo: Path) -> list[str]:
         items: list[str] = []
@@ -107,15 +145,29 @@ class ContextBuilder:
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [CandidateFile(path=rel, reason=reason, score=score) for score, rel, reason in scored[: self.max_candidate_files]]
 
-    def _modules_from_tree(self, file_tree: list[str]) -> list[str]:
-        modules = []
-        seen = set()
-        for rel in file_tree:
-            top = rel.split('/', 1)[0]
-            if top not in seen:
-                seen.add(top)
-                modules.append(top)
-        return modules[:10]
+    def _pack_packet(self, packet: AdvisorInputPacket) -> AdvisorInputPacket:
+        artifact_limit = self._artifact_limit()
+        history_limit = self._history_limit()
+        packet.candidate_files = packet.candidate_files[:artifact_limit]
+        packet.artifacts = packet.artifacts[:artifact_limit]
+        packet.history = packet.history[:history_limit]
+        if packet.context is not None:
+            packet.context.metadata["packed"] = {
+                "candidate_files": len(packet.candidate_files),
+                "artifacts": len(packet.artifacts),
+                "history": len(packet.history),
+            }
+        return packet
+
+    def _artifact_limit(self) -> int:
+        if self.token_budget <= 360:
+            return 1
+        return max(1, min(self.max_candidate_files, self.token_budget // 220))
+
+    def _history_limit(self) -> int:
+        if self.token_budget <= 420:
+            return 0
+        return min(self.max_failures, max(1, (self.token_budget - 320) // 260))
 
     def _constraints_from_task(self, task_text: str) -> list[str]:
         text = task_text.lower()

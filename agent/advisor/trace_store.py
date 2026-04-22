@@ -42,7 +42,12 @@ class AdvisorTraceStore:
                   constraints_json TEXT NOT NULL,
                   tool_limits_json TEXT NOT NULL,
                   acceptance_criteria_json TEXT NOT NULL,
-                  token_budget INTEGER NOT NULL
+                  token_budget INTEGER NOT NULL,
+                  task_json TEXT,
+                  context_json TEXT,
+                  artifacts_json TEXT,
+                  history_json TEXT,
+                  domain_capabilities_json TEXT
                 );
                 CREATE TABLE IF NOT EXISTS advice_records (
                   run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
@@ -79,6 +84,18 @@ class AdvisorTraceStore:
                 );
                 """
             )
+            columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(run_contexts)").fetchall()
+            }
+            for column_name in (
+                "task_json",
+                "context_json",
+                "artifacts_json",
+                "history_json",
+                "domain_capabilities_json",
+            ):
+                if column_name not in columns:
+                    conn.execute(f"ALTER TABLE run_contexts ADD COLUMN {column_name} TEXT")
 
     def record_task_run(
         self,
@@ -112,8 +129,9 @@ class AdvisorTraceStore:
                 """
                 INSERT OR REPLACE INTO run_contexts(
                     run_id, repo_summary_json, candidate_files_json, recent_failures_json,
-                    constraints_json, tool_limits_json, acceptance_criteria_json, token_budget
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    constraints_json, tool_limits_json, acceptance_criteria_json, token_budget,
+                    task_json, context_json, artifacts_json, history_json, domain_capabilities_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     packet.run_id,
@@ -124,6 +142,11 @@ class AdvisorTraceStore:
                     json.dumps(packet.tool_limits),
                     json.dumps(packet.acceptance_criteria),
                     packet.token_budget,
+                    json.dumps(packet.task.model_dump() if packet.task else None),
+                    json.dumps(packet.context.model_dump() if packet.context else None),
+                    json.dumps([item.model_dump() for item in packet.artifacts]),
+                    json.dumps([item.model_dump() for item in packet.history]),
+                    json.dumps([item.model_dump() for item in packet.domain_capabilities]),
                 ),
             )
             # Advice is stored after validation so downstream exports only see normalized output.
@@ -187,6 +210,7 @@ class AdvisorTraceStore:
                 """
                 SELECT r.*, rc.repo_summary_json, rc.candidate_files_json, rc.recent_failures_json,
                        rc.constraints_json, rc.tool_limits_json, rc.acceptance_criteria_json, rc.token_budget,
+                       rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
                        ar.advice_json, ar.advisor_model, ar.latency_ms,
                        ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
                 FROM runs r
@@ -207,6 +231,7 @@ class AdvisorTraceStore:
                 """
                 SELECT r.*, rc.repo_summary_json, rc.candidate_files_json, rc.recent_failures_json,
                        rc.constraints_json, rc.tool_limits_json, rc.acceptance_criteria_json, rc.token_budget,
+                       rc.task_json, rc.context_json, rc.artifacts_json, rc.history_json, rc.domain_capabilities_json,
                        ar.advice_json, ar.advisor_model, ar.latency_ms,
                        ro.status, ro.files_touched_json, ro.retries, ro.tests_run_json, ro.review_verdict, ro.summary
                 FROM runs r
@@ -235,7 +260,12 @@ class AdvisorTraceStore:
             } if row["status"] else None,
         }
         if include_context:
-            # Rehydrate through the schema so replayed runs get the same backfilled generic fields.
+            task_json = json.loads(row["task_json"]) if row["task_json"] else None
+            context_json = json.loads(row["context_json"]) if row["context_json"] else None
+            artifacts_json = json.loads(row["artifacts_json"]) if row["artifacts_json"] else []
+            history_json = json.loads(row["history_json"]) if row["history_json"] else []
+            capabilities_json = json.loads(row["domain_capabilities_json"]) if row["domain_capabilities_json"] else []
+            # Rehydrate through the schema so replayed runs prefer stored generic state.
             packet = AdvisorInputPacket(
                 run_id=row["run_id"],
                 task_text=row["task_text"],
@@ -248,31 +278,51 @@ class AdvisorTraceStore:
                 tool_limits=json.loads(row["tool_limits_json"]) if row["tool_limits_json"] else {},
                 acceptance_criteria=json.loads(row["acceptance_criteria_json"]) if row["acceptance_criteria_json"] else [],
                 token_budget=row["token_budget"] or 0,
+                task=task_json,
+                context=context_json,
+                artifacts=artifacts_json,
+                history=history_json,
+                domain_capabilities=capabilities_json,
             )
             result["input"] = packet.model_dump()
         return result
 
-    def find_recent_failures(self, task_text: str, repo_path: str, limit: int = 5) -> list[FailureSignal]:
-        # Token overlap is crude but cheap; this is a placeholder retrieval path until richer replay indexing exists.
-        tokens = [tok.lower() for tok in task_text.split() if len(tok) >= 4][:6]
-        clauses = []
-        params: list[str] = [repo_path]
-        for tok in tokens:
-            clauses.append("LOWER(task_text) LIKE ?")
-            params.append(f"%{tok}%")
-        where = " OR ".join(clauses) if clauses else "1=1"
-        query = f"""
-            SELECT ro.summary, ro.review_verdict
-            FROM run_outcomes ro
-            JOIN runs r ON r.run_id = ro.run_id
-            WHERE r.repo_path = ? AND ro.status != 'success' AND ({where})
-            ORDER BY ro.completed_at DESC
-            LIMIT ?
-        """
-        params.append(limit)
+    def find_recent_failures(
+        self,
+        task_text: str,
+        repo_path: str,
+        limit: int = 5,
+        changed_files: list[str] | None = None,
+    ) -> list[FailureSignal]:
+        task_tokens = {tok.lower() for tok in task_text.split() if len(tok) >= 4}
+        changed = set(changed_files or [])
         with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(
+                """
+                SELECT r.task_text, ro.summary, ro.review_verdict, ro.files_touched_json, ro.completed_at
+                FROM run_outcomes ro
+                JOIN runs r ON r.run_id = ro.run_id
+                WHERE r.repo_path = ? AND ro.status != 'success'
+                ORDER BY ro.completed_at DESC
+                LIMIT 50
+                """,
+                (repo_path,),
+            ).fetchall()
+        scored: list[tuple[float, sqlite3.Row]] = []
+        for row in rows:
+            row_tokens = {
+                tok.lower()
+                for tok in ((row["task_text"] or "") + " " + (row["summary"] or "")).split()
+                if len(tok) >= 4
+            }
+            files_touched = set(json.loads(row["files_touched_json"]) if row["files_touched_json"] else [])
+            score = float(len(task_tokens & row_tokens))
+            if changed:
+                score += 3.0 * len(changed & files_touched)
+            if score > 0:
+                scored.append((score, row))
+        scored.sort(key=lambda item: (-item[0], item[1]["completed_at"] or ""), reverse=False)
         return [
             FailureSignal(kind="recent-failure", summary=row["summary"] or "previous failure", fix_hint=row["review_verdict"])
-            for row in rows
+            for _score, row in scored[:limit]
         ]
