@@ -11,7 +11,11 @@ from agent.advisor.schemas import (
 
 
 class StubGateway:
+    def __init__(self):
+        self.calls = []
+
     def task_run(self, **kwargs):
+        self.calls.append(kwargs)
         packet = AdvisorInputPacket(
             run_id="run-123",
             task_text=kwargs["task_text"],
@@ -46,7 +50,8 @@ def test_cli_run_prints_json(monkeypatch, tmp_path, capsys):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: StubGateway())
+    gateway = StubGateway()
+    monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: gateway)
     exit_code = cli.main([
         "run",
         "--task-text",
@@ -57,6 +62,8 @@ def test_cli_run_prints_json(monkeypatch, tmp_path, capsys):
         "tests pass",
         "--tool-limit",
         "write_allowed=true",
+        "--system-prompt",
+        "You are a generic execution advisor.",
     ])
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -65,6 +72,8 @@ def test_cli_run_prints_json(monkeypatch, tmp_path, capsys):
     assert payload["run_id"] == "run-123"
     assert payload["advisor_input_packet"]["acceptance_criteria"] == ["tests pass"]
     assert payload["advisor_input_packet"]["tool_limits"] == {"write_allowed": True}
+    assert gateway.calls[0]["system_prompt"] == "You are a generic execution advisor."
+
 
 
 def test_cli_serve_invokes_uvicorn(monkeypatch):

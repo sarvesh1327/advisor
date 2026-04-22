@@ -6,8 +6,10 @@ from agent.advisor.settings import AdvisorSettings
 class StubRuntime:
     def __init__(self):
         self.warmup_calls = 0
+        self.generate_calls = []
 
-    def generate_advice(self, packet):
+    def generate_advice(self, packet, system_prompt=None):
+        self.generate_calls.append({"packet": packet, "system_prompt": system_prompt})
         return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect likely file"], confidence=0.7)
 
     def capabilities(self):
@@ -31,12 +33,19 @@ def test_gateway_builds_packet_and_returns_advice(tmp_path):
     repo.mkdir()
     (repo / "main.py").write_text("def main():\n    pass\n")
 
+    runtime = StubRuntime()
     settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
-    gateway = AdvisorGateway(settings=settings, runtime=StubRuntime())
-    result = gateway.task_run(task_text="fix main entrypoint bug", repo_path=str(repo), tool_limits={"write_allowed": True})
+    gateway = AdvisorGateway(settings=settings, runtime=runtime)
+    result = gateway.task_run(
+        task_text="fix main entrypoint bug",
+        repo_path=str(repo),
+        tool_limits={"write_allowed": True},
+        system_prompt="You are a generic execution advisor.",
+    )
 
     assert result.advice_block.recommended_plan == ["inspect likely file"]
     assert result.advisor_input_packet.task_type == "bugfix"
+    assert runtime.generate_calls[0]["system_prompt"] == "You are a generic execution advisor."
     stored = gateway.trace_store.get_run(result.run_id)
     assert stored is not None
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from .schemas import AdvisorInputPacket, CandidateFile, RepoSummary
 from .trace_store import AdvisorTraceStore
 
-_SKIP_DIRS = {".git", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache"}
+_SKIP_DIRS = {".git", ".next", ".turbo", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache"}
 _ENTRYPOINT_FILENAMES = {"main.py", "app.py", "server.py", "gateway.py", "cli.py", "api.py"}
 
 

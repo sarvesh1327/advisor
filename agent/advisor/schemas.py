@@ -42,6 +42,7 @@ class AdvisorTaskRequest(BaseModel):
     repo_path: str
     branch: str | None = None
     task_type_hint: str | None = None
+    system_prompt: str | None = None
     session_id: str | None = None
     task_id: str | None = None
     changed_files: list[str] = Field(default_factory=list)
