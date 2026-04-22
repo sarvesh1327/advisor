@@ -47,6 +47,16 @@ from .orchestration import (
     RubricVerifier,
     ScreenshotComparisonVerifier,
 )
+from .results_pass import (
+    build_failure_taxonomy,
+    build_phase16_results_report,
+    default_paper_divergences,
+    summarize_ablation_results,
+    summarize_canonical_study,
+    summarize_provenance_coverage,
+    summarize_transfer_results,
+    write_phase16_results_report,
+)
 from .schemas import (
     AdviceBlock,
     AdvisorInputPacket,
@@ -103,6 +113,13 @@ __all__ = [
     "ScreenshotComparisonVerifier",
     "ScreenshotHashVerifier",
     "TrainingCheckpointRecord",
+    "build_failure_taxonomy",
+    "build_phase16_results_report",
+    "default_paper_divergences",
+    "summarize_ablation_results",
+    "summarize_canonical_study",
+    "summarize_provenance_coverage",
+    "summarize_transfer_results",
     "TrainingJobConfig",
     "TrainingJobResult",
     "build_audit_report",
@@ -119,4 +136,5 @@ __all__ = [
     "get_version",
     "redact_packet",
     "run_task",
+    "write_phase16_results_report",
 ]

@@ -137,10 +137,10 @@ Core rule:
 - [x] Enforce retention / archival / rotation behavior operationally
 
 ## Phase 16 — Paper-faithful results pass
-- [ ] Run canonical baseline vs advisor-assisted studies on frozen suites
-- [ ] Run packet/advice/reward ablations and transfer experiments
-- [ ] Produce a credible results report with benchmark tables, failure taxonomy, and provenance coverage
-- [ ] Document remaining divergences from the source paper explicitly
+- [x] Run canonical baseline vs advisor-assisted studies on frozen suites
+- [x] Run packet/advice/reward ablations and transfer experiments
+- [x] Produce a credible results report with benchmark tables, failure taxonomy, and provenance coverage
+- [x] Document remaining divergences from the source paper explicitly
 
 ## Phase 17 — Finished product hardening
 - [ ] Harden auth, tenancy, isolation, and operator runbooks

@@ -96,6 +96,7 @@ Current repo status:
 - Phase 13 adds frozen benchmark suites, benchmark run manifests, deterministic baseline-vs-advisor summaries, and ablation-friendly reporting
 - Phase 14 adds persisted training manifests, checkpoint registry lifecycle, and benchmark-driven promotion/rollback decisions
 - Phase 15 adds operator deployment profiles, run inspection endpoints, persistent background job queueing/resume, and retention enforcement with archival rotation
+- Phase 16 adds a paper-faithful results-pass layer with canonical study summaries, ablation/transfer reporting, failure taxonomy, provenance coverage, and explicit paper-divergence reporting
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing
