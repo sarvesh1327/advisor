@@ -18,6 +18,7 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("ADVISOR_ENABLED", "true")
     monkeypatch.setenv("ADVISOR_MODEL", "mlx-community/Qwen2.5-7B-Instruct-4bit")
     monkeypatch.setenv("ADVISOR_MODEL_VERSION", "advisor-qwen25-7b-v1")
+    monkeypatch.setenv("ADVISOR_SYSTEM_PROMPT", "You are a generic execution advisor.")
     monkeypatch.setenv("ADVISOR_MAX_TOKENS", "700")
     monkeypatch.setenv("ADVISOR_TEMPERATURE", "0.2")
     monkeypatch.setenv("ADVISOR_TOKEN_BUDGET", "2200")
@@ -30,6 +31,7 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.trace_db_path == str(advisor_home / "advisor.db")
     assert settings.model_name == "mlx-community/Qwen2.5-7B-Instruct-4bit"
     assert settings.model_version == "advisor-qwen25-7b-v1"
+    assert settings.system_prompt == "You are a generic execution advisor."
     assert settings.max_tokens == 700
     assert settings.temperature == 0.2
     assert settings.token_budget == 2200
@@ -47,6 +49,7 @@ def test_settings_from_toml_file_loads_values(tmp_path):
             trace_db_path = "/tmp/advisor/custom.db"
             model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit"
             model_version = "advisor-qwen25-7b-v2"
+            system_prompt = "You are a generic execution advisor."
             max_context_files = 10
             max_tree_entries = 80
             max_failures = 7
@@ -67,6 +70,7 @@ def test_settings_from_toml_file_loads_values(tmp_path):
     assert settings.enabled is True
     assert settings.trace_db_path == "/tmp/advisor/custom.db"
     assert settings.model_version == "advisor-qwen25-7b-v2"
+    assert settings.system_prompt == "You are a generic execution advisor."
     assert settings.max_failures == 7
     assert settings.token_budget == 2400
     assert settings.max_retries == 2

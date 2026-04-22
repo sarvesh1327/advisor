@@ -24,6 +24,11 @@ class AdvisorSettings(BaseModel):
     trace_db_path: str = str(get_default_advisor_home() / "advisor.db")
     model_name: str = "mlx-community/Qwen2.5-3B-Instruct-4bit"
     model_version: str = "advisor-qwen25-3b-v1"
+    system_prompt: str = (
+        "You are an execution advisor. Return ONLY valid JSON with keys "
+        "task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
+        "recommended_plan, avoid, confidence, notes. Do not emit markdown, role tags, or commentary."
+    )
     fallback_model_name: str | None = None
     max_context_files: int = 8
     max_tree_entries: int = 60
@@ -65,6 +70,12 @@ class AdvisorSettings(BaseModel):
             trace_db_path=os.getenv("ADVISOR_TRACE_DB", str(default_db)),
             model_name=os.getenv("ADVISOR_MODEL", "mlx-community/Qwen2.5-3B-Instruct-4bit"),
             model_version=os.getenv("ADVISOR_MODEL_VERSION", "advisor-qwen25-3b-v1"),
+            system_prompt=os.getenv(
+                "ADVISOR_SYSTEM_PROMPT",
+                "You are an execution advisor. Return ONLY valid JSON with keys "
+                "task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
+                "recommended_plan, avoid, confidence, notes. Do not emit markdown, role tags, or commentary.",
+            ),
             fallback_model_name=os.getenv("ADVISOR_FALLBACK_MODEL"),
             max_context_files=int(os.getenv("ADVISOR_MAX_CONTEXT_FILES", "8")),
             max_tree_entries=int(os.getenv("ADVISOR_MAX_TREE_ENTRIES", "60")),
@@ -101,6 +112,7 @@ class AdvisorSettings(BaseModel):
             "trace_db_path": self.trace_db_path,
             "model_name": self.model_name,
             "model_version": self.model_version,
+            "system_prompt": self.system_prompt,
             "fallback_model_name": self.fallback_model_name,
             "max_tokens": self.max_tokens,
             "token_budget": self.token_budget,

@@ -30,6 +30,7 @@ def run_task(
     session_id: str | None = None,
     task_id: str | None = None,
     task_type_hint: str | None = None,
+    system_prompt: str | None = None,
 ) -> AdvisorTaskRunResult:
     active_gateway = gateway or create_gateway()
     return active_gateway.task_run(
@@ -41,6 +42,7 @@ def run_task(
         session_id=session_id,
         task_id=task_id,
         task_type_hint=task_type_hint,
+        system_prompt=system_prompt,
     )
 
 

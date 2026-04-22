@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import time
 import uuid
 from hashlib import sha256
@@ -69,6 +70,7 @@ class AdvisorGateway:
         session_id: str | None = None,
         task_id: str | None = None,
         task_type_hint: str | None = None,
+        system_prompt: str | None = None,
     ) -> AdvisorTaskRunResult:
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         packet = self.context_builder.build(
@@ -83,7 +85,12 @@ class AdvisorGateway:
         packet.repo["session_id"] = session_id
         packet.repo["task_id"] = task_id
         started = time.perf_counter()
-        advice = self.runtime.generate_advice(packet)
+        generate_advice = self.runtime.generate_advice
+        supports_system_prompt = "system_prompt" in inspect.signature(generate_advice).parameters
+        if supports_system_prompt:
+            advice = generate_advice(packet, system_prompt=system_prompt)
+        else:
+            advice = generate_advice(packet)
         latency_ms = int((time.perf_counter() - started) * 1000)
         safe_advice = self.validator.validate(advice)
         prompt_hash = sha256(
@@ -130,6 +137,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             session_id=req.session_id,
             task_id=req.task_id,
             task_type_hint=req.task_type_hint,
+            system_prompt=req.system_prompt,
         )
 
     return app

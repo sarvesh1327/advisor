@@ -13,6 +13,14 @@ class StubTokenizer:
         return "prompt"
 
 
+class CaptureTokenizer:
+    def __init__(self):
+        self.calls = []
+
+    def apply_chat_template(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return "captured-prompt"
+
 
 def _packet() -> AdvisorInputPacket:
     return AdvisorInputPacket(
@@ -79,6 +87,31 @@ def test_runtime_retries_after_malformed_json(monkeypatch):
 
     assert advice.recommended_plan == ["inspect main.py"]
     assert calls["count"] == 2
+
+
+
+def test_runtime_builds_chat_prompt_without_assistant_prefill():
+    tokenizer = CaptureTokenizer()
+    runtime = MLXAdvisorRuntime(AdvisorSettings(system_prompt="You are a generic execution advisor."))
+
+    prompt = runtime._build_generation_prompt(tokenizer, _packet())
+
+    assert prompt == "captured-prompt"
+    messages, kwargs = tokenizer.calls[0]
+    assert messages[0]["content"] == "You are a generic execution advisor."
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert kwargs == {"tokenize": False, "add_generation_prompt": True}
+
+
+
+def test_runtime_builds_chat_prompt_with_explicit_override():
+    tokenizer = CaptureTokenizer()
+    runtime = MLXAdvisorRuntime(AdvisorSettings(system_prompt="default generic prompt"))
+
+    runtime._build_generation_prompt(tokenizer, _packet(), system_prompt="temporary override")
+
+    messages, _kwargs = tokenizer.calls[0]
+    assert messages[0]["content"] == "temporary override"
 
 
 

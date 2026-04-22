@@ -37,6 +37,9 @@ ruff check .
 - add or update tests first when changing behavior
 - prefer stable public interfaces over incidental internals
 - update README/docs when public usage changes
+- treat `docs/PAPER_FOUNDATION.md` as a design constraint, not optional reading
+- prefer generic advisor abstractions in the core and isolate coding-only logic behind adapters or extension fields
+- when adding new evaluation or execution paths, make sure they preserve replayability and produce reward-usable signals
 
 ## Pull requests
 
@@ -44,4 +47,5 @@ Please include:
 - what changed
 - why it changed
 - how it was tested
+- how it supports or intentionally scopes around the paper-aligned roadmap
 - any follow-up work left out of the PR

@@ -1,6 +1,10 @@
 # Advisor production checklist
 
-This is the working checklist for turning Advisor from a clean extracted prototype into a production-ready product.
+This is the working checklist for turning Advisor into a generic, paper-faithful implementation of How to Train Your Advisor: Steering Black-Box LLMs with Advisor Models, including the reward system needed to improve the advisor over time.
+
+Core rule:
+- every major implementation decision should strengthen the paper loop: packet -> advisor advice -> black-box executor -> outcome/reward -> replay/eval -> advisor improvement
+- avoid coding-only assumptions in core abstractions unless they are explicitly isolated behind a domain adapter
 
 ## Phase 1 — Product surface
 - [x] Add a stable Python API surface (`create_gateway`, `run_task`, `create_http_app`, `get_version`)
@@ -30,30 +34,74 @@ This is the working checklist for turning Advisor from a clean extracted prototy
 - [x] Add model warm-load path
 - [x] Add fallback behavior for smaller models
 
-## Phase 5 — Context engine improvements
-- [ ] Improve candidate file ranking
-- [ ] Add changed-files awareness
-- [ ] Add symbol extraction
-- [ ] Improve recent-failure retrieval
-- [ ] Handle larger repos more predictably
+## Phase 5 — Generic packet and context engine
+- [ ] Split core advisor abstractions from coding-specific packet builders
+- [ ] Define a domain-agnostic task packet schema (`task`, `context`, `artifacts`, `constraints`, `history`, `acceptance_criteria`)
+- [ ] Add a coding adapter that maps repos/files/failures into the generic packet
+- [ ] Add an image-or-UI adapter that maps references/screenshots/layout constraints into the generic packet
+- [ ] Add a research-or-writing adapter that maps sources/notes/objectives into the generic packet
+- [ ] Add domain capability descriptors so runtimes know which packet fields they can use
+- [ ] Improve candidate artifact ranking within adapters
+- [ ] Add changed-artifact awareness
+- [ ] Add symbol/region extraction hooks where the domain supports them
+- [ ] Improve retrieval of recent failures / prior attempts
+- [ ] Handle large task contexts more predictably with budgeted packing
+- [ ] Add adapter-specific artifact exclusion rules (for example build outputs, generated assets, cached artifacts)
 
-## Phase 6 — Evaluation
-- [ ] Add golden eval fixtures
+## Phase 6 — Advice schema and injection layer
+- [ ] Define a generic advice schema with domain-neutral fields (`focus_targets`, `recommended_plan`, `avoid`, `likely_failure_modes`, `confidence`, `notes`)
+- [ ] Preserve coding-specific convenience fields only as adapter extensions, not core requirements
+- [ ] Add advice rendering templates for different executor types (chat model, agent loop, API client, human operator)
+- [ ] Add prompt builders that inject advice without assuming a coding workflow
+- [ ] Add executor-side policy for how advice is prepended, merged, or gated
+- [ ] Add structured trace capture for exactly what advice was injected into each executor run
+- [ ] Add calibration guidance for confidence and abstention behavior
+
+## Phase 7 — Evaluation and replay
+- [ ] Add golden eval fixtures for each supported domain
+- [ ] Define fixture schema with frozen input packet, expected good guidance targets, and anti-targets
+- [ ] Add offline steering scorer for file/artifact targeting, plan quality, failure-mode quality, and noisy-target rate
 - [ ] Add replay harness for stored traces
-- [ ] Measure no-advisor vs advisor behavior
-- [ ] Track quality metrics beyond basic hit-rate
-- [ ] Add regression-oriented eval docs
+- [ ] Re-run current advisor versions against historical packets and compare against prior advice and fixture labels
+- [ ] Measure no-advisor vs advisor executor behavior on the same tasks with the same black-box model
+- [ ] Track comparative metrics beyond basic hit-rate (task success, retries, wall-clock time, token use, dead-end first moves, unnecessary edits, artifact-target rate)
+- [ ] Add human review rubric for advice usefulness, over-steering, and calibration
+- [ ] Add regression-oriented eval docs and locked hard-case suites
 
-## Phase 7 — Data and training pipeline
-- [ ] Add curation flow for exported traces
-- [ ] Add quality scoring
-- [ ] Add split policy (train/val/test)
-- [ ] Add deduping / hard-case bucketing
-- [ ] Add feedback loop notes for future tuning
+## Phase 8 — Reward system and training data pipeline
+- [ ] Define the reward model inputs from executor outcomes, verifier results, human ratings, and trajectory features
+- [ ] Implement reward computation for both offline replay and live runs
+- [ ] Add normalized reward components (`task_success`, `efficiency`, `targeting_quality`, `constraint_compliance`, `human_usefulness`)
+- [ ] Add curation flow for exported traces and reward-labeled examples
+- [ ] Add quality scoring and filtering before training
+- [ ] Add split policy (train/val/test) with task-family and repo-family leakage protection
+- [ ] Add deduping and hard-case bucketing
+- [ ] Add negative-example capture for harmful or noisy advice
+- [ ] Version datasets, reward configs, and labeling rules
+- [ ] Document feedback loop notes for future tuning
 
-## Phase 8 — Security, privacy, and observability
-- [ ] Document stored data and retention expectations
-- [ ] Add redaction/safe defaults guidance
-- [ ] Add structured logs and run-id tracing
-- [ ] Add metrics surface or export path
-- [ ] Add production operating notes
+## Phase 9 — Advisor optimization loop
+- [ ] Add training pipeline for advisor-model improvement from reward-labeled data
+- [ ] Support at least one supervised warm-start path and one preference/reward-optimization path
+- [ ] Add experiment config for student advisor model, target executor, domain mix, and reward weights
+- [ ] Add checkpoint evaluation against frozen replay/eval suites
+- [ ] Add transfer experiments: advisor trained with lower-cost executor context but evaluated against stronger black-box executor
+- [ ] Add ablations for packet fields, advice schema fields, and reward components
+- [ ] Add rollback criteria when a newly trained advisor regresses on baseline suites
+
+## Phase 10 — Orchestration and live product loop
+- [ ] Add a first-class runner for advisor -> executor -> verifier -> reward capture
+- [ ] Add pluggable executor interfaces for frontier chat APIs, coding agents, and future domain-specific workers
+- [ ] Add verifier interfaces for build/test checks, screenshot comparison, rubric graders, and human review
+- [ ] Persist full run lineage linking packet, advice, executor output, verifier output, and reward
+- [ ] Add replayable run manifests so experiments can be reproduced exactly
+- [ ] Add online A/B routing for baseline vs advisor-assisted execution
+- [ ] Add support for optional second-pass advisor review after executor output
+
+## Phase 11 — Security, privacy, and observability
+- [ ] Document stored data, reward logs, and retention expectations
+- [ ] Add redaction and safe-default guidance for packets, traces, and human labels
+- [ ] Add structured logs and run-id tracing across advisor, executor, verifier, and reward stages
+- [ ] Add metrics surface or export path for eval and live runs
+- [ ] Add production operating notes for multi-tenant or hosted deployments
+- [ ] Add audit notes for dataset provenance and reward-label lineage

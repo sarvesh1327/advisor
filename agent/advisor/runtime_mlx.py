@@ -83,7 +83,7 @@ class MLXAdvisorRuntime:
             self._active_model_name = self.settings.fallback_model_name
         return self._model, self._tokenizer
 
-    def generate_advice(self, packet) -> AdviceBlock:
+    def generate_advice(self, packet, system_prompt: str | None = None) -> AdviceBlock:
         try:
             model, tokenizer = self._ensure_loaded()
             if mlx_lm_generate is None or mlx_make_sampler is None:
@@ -93,22 +93,7 @@ class MLXAdvisorRuntime:
                 return self._heuristic_fallback(packet, reason=str(exc))
             raise
 
-        prompt = tokenizer.apply_chat_template(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a code-execution advisor. Return ONLY valid JSON with keys "
-                        "task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, "
-                        "recommended_plan, avoid, confidence, notes."
-                    ),
-                },
-                {"role": "user", "content": self._format_prompt(packet)},
-                {"role": "assistant", "content": "{"},
-            ],
-            tokenize=False,
-            add_generation_prompt=False,
-        )
+        prompt = self._build_generation_prompt(tokenizer, packet, system_prompt=system_prompt)
 
         last_error: Exception | None = None
         for _attempt in range(self.settings.max_retries + 1):
@@ -125,6 +110,20 @@ class MLXAdvisorRuntime:
         if last_error:
             raise last_error
         raise RuntimeError("generation failed without a recoverable error")
+
+    def _build_generation_prompt(self, tokenizer, packet, system_prompt: str | None = None) -> str:
+        effective_system_prompt = system_prompt or self.settings.system_prompt
+        return tokenizer.apply_chat_template(
+            [
+                {
+                    "role": "system",
+                    "content": effective_system_prompt,
+                },
+                {"role": "user", "content": self._format_prompt(packet)},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
     def _generate_response(self, model, tokenizer, prompt: str) -> str:
         if mlx_lm_generate is None or mlx_make_sampler is None:
@@ -179,10 +178,23 @@ class MLXAdvisorRuntime:
         )
 
     def _format_prompt(self, packet) -> str:
+        json_template = (
+            '{"task_type": "feature", "relevant_files": [{"path": "src/app/page.tsx", '
+            '"why": "landing page entrypoint", "priority": 1}], "relevant_symbols": [], '
+            '"constraints": [], "likely_failure_modes": [], "recommended_plan": '
+            '["edit src/app/page.tsx"], "avoid": [], "confidence": 0.8, '
+            '"notes": "brief note"}'
+        )
         return (
             "You are a code-execution advisor that emits JSON only.\n"
-            "Return an object with keys: task_type, relevant_files, relevant_symbols, constraints, likely_failure_modes, recommended_plan, avoid, confidence, notes.\n"
-            "Keep output concise and useful.\n\n"
+            "Return exactly one JSON object with keys: task_type, relevant_files, "
+            "relevant_symbols, constraints, likely_failure_modes, recommended_plan, "
+            "avoid, confidence, notes.\n"
+            "Rules:\n"
+            "- Output must start with { and end with }\n"
+            "- Do not include markdown fences\n"
+            "- Do not include role tags or prose before/after the JSON\n"
+            "- Keep output concise and useful\n\n"
             f"TASK: {packet.task_text}\n"
             f"TASK_TYPE: {packet.task_type}\n"
             f"REPO: {packet.repo}\n"
@@ -193,6 +205,7 @@ class MLXAdvisorRuntime:
             f"RECENT_FAILURES: {[item.model_dump() for item in packet.recent_failures]}\n"
             f"CONSTRAINTS: {packet.constraints}\n"
             f"ACCEPTANCE_CRITERIA: {packet.acceptance_criteria}\n"
+            f"JSON_TEMPLATE: {json_template}\n"
         )
 
     def _extract_json(self, text: str) -> dict:

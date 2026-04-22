@@ -116,11 +116,19 @@ See `docs/ARCHITECTURE.md` for the image index and diagram notes.
 
 ## Production roadmap
 
-See `docs/PRODUCTION_CHECKLIST.md` for the staged production-readiness checklist.
+See `docs/PRODUCTION_CHECKLIST.md` for the staged production roadmap toward a generic, paper-faithful advisor implementation with reward-driven improvement.
+
+## Paper foundation
+
+This repo is grounded in How to Train Your Advisor: Steering Black-Box LLMs with Advisor Models.
+
+See `docs/PAPER_FOUNDATION.md` for the repo-level design rules derived from that paper.
 
 ## Reference
 
-- arXiv: https://arxiv.org/pdf/2510.02453
+- How to Train Your Advisor: Steering Black-Box LLMs with Advisor Models
+- arXiv abstract: https://arxiv.org/abs/2510.02453
+- PDF: https://arxiv.org/pdf/2510.02453
 
 ## License
 

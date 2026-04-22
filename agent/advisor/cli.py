@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--repo-path", required=True, help="Path to the target repo")
     run_parser.add_argument("--branch", default=None, help="Optional git branch hint")
     run_parser.add_argument("--task-type-hint", default=None, help="Optional task type override")
+    run_parser.add_argument("--system-prompt", default=None, help="Optional advisor system prompt override")
     run_parser.add_argument("--acceptance-criterion", action="append", default=[], help="Repeatable acceptance criteria")
     run_parser.add_argument("--tool-limit", action="append", default=[], help="Repeatable tool limit in key=value form")
     run_parser.set_defaults(handler=_handle_run)
@@ -56,6 +57,7 @@ def _handle_run(args) -> int:
         tool_limits=_parse_tool_limits(args.tool_limit),
         acceptance_criteria=args.acceptance_criterion,
         task_type_hint=args.task_type_hint,
+        system_prompt=args.system_prompt,
     )
     print(json.dumps(result.model_dump(), ensure_ascii=False))
     return 0
