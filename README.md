@@ -91,6 +91,7 @@ Current repo status:
 - Phase 10 orchestration now supports executor/verifier plug-ins, deterministic A/B routing, replayable manifests, and optional second-pass review
 - Phase 11 adds redacted packet exports, structured run-event logs, live metrics export, and audit reporting
 - Phase 12 adds real HTTP/subprocess executor integrations, real verifier adapters, integration registry construction, and parity-tested baseline vs advisor-assisted execution
+- Phase 13 adds frozen benchmark suites, benchmark run manifests, deterministic baseline-vs-advisor summaries, and ablation-friendly reporting
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing

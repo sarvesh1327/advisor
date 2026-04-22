@@ -119,10 +119,10 @@ Core rule:
 - [x] Normalize executor/verifier outputs into the canonical lineage without drift
 
 ## Phase 13 — Canonical benchmark and replay suite
-- [ ] Freeze reproducible benchmark splits for core domains
-- [ ] Add benchmark manifests that capture packet hash, executor config, verifier set, routing arm, and reward version
-- [ ] Add reproducible baseline vs advisor-assisted results generation
-- [ ] Add ablation-friendly benchmark reporting
+- [x] Freeze reproducible benchmark splits for core domains
+- [x] Add benchmark manifests that capture packet hash, executor config, verifier set, routing arm, and reward version
+- [x] Add reproducible baseline vs advisor-assisted results generation
+- [x] Add ablation-friendly benchmark reporting
 
 ## Phase 14 — Real training loop and checkpoint lifecycle
 - [ ] Train at least one real advisor checkpoint from repo-generated data
