@@ -24,11 +24,11 @@ This is the working checklist for turning Advisor from a clean extracted prototy
 - [x] Pin/test supported Python versions
 
 ## Phase 4 — Inference robustness
-- [ ] Add timeout handling
-- [ ] Add malformed JSON recovery strategy
-- [ ] Add retry policy for bad model output
-- [ ] Add model warm-load path
-- [ ] Add fallback behavior for smaller models
+- [x] Add timeout handling
+- [x] Add malformed JSON recovery strategy
+- [x] Add retry policy for bad model output
+- [x] Add model warm-load path
+- [x] Add fallback behavior for smaller models
 
 ## Phase 5 — Context engine improvements
 - [ ] Improve candidate file ranking

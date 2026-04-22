@@ -21,6 +21,8 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("ADVISOR_MAX_TOKENS", "700")
     monkeypatch.setenv("ADVISOR_TEMPERATURE", "0.2")
     monkeypatch.setenv("ADVISOR_TOKEN_BUDGET", "2200")
+    monkeypatch.setenv("ADVISOR_MAX_RETRIES", "3")
+    monkeypatch.setenv("ADVISOR_INFERENCE_TIMEOUT_SECONDS", "15")
 
     settings = AdvisorSettings.from_env()
 
@@ -31,6 +33,8 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.max_tokens == 700
     assert settings.temperature == 0.2
     assert settings.token_budget == 2200
+    assert settings.max_retries == 3
+    assert settings.inference_timeout_seconds == 15
 
 
 
@@ -49,6 +53,11 @@ def test_settings_from_toml_file_loads_values(tmp_path):
             max_tokens = 640
             temperature = 0.3
             token_budget = 2400
+            max_retries = 2
+            inference_timeout_seconds = 12
+            warm_load_on_start = true
+            enable_fallback_runtime = true
+            fallback_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
             """
         ).strip()
     )
@@ -60,6 +69,11 @@ def test_settings_from_toml_file_loads_values(tmp_path):
     assert settings.model_version == "advisor-qwen25-7b-v2"
     assert settings.max_failures == 7
     assert settings.token_budget == 2400
+    assert settings.max_retries == 2
+    assert settings.inference_timeout_seconds == 12
+    assert settings.warm_load_on_start is True
+    assert settings.enable_fallback_runtime is True
+    assert settings.fallback_model_name == "mlx-community/Qwen2.5-3B-Instruct-4bit"
 
 
 
@@ -78,6 +92,12 @@ def test_settings_load_prefers_explicit_config_path(monkeypatch, tmp_path):
 def test_settings_validate_rejects_invalid_token_budget():
     with pytest.raises(ValueError):
         AdvisorSettings(max_tokens=900, token_budget=800)
+
+
+
+def test_settings_validate_rejects_negative_timeout():
+    with pytest.raises(ValueError):
+        AdvisorSettings(inference_timeout_seconds=0)
 
 
 

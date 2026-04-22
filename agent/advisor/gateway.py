@@ -20,7 +20,12 @@ except ImportError:
 
 
 class AdvisorGateway:
-    def __init__(self, settings: AdvisorSettings | None = None, runtime: Any | None = None, trace_store: AdvisorTraceStore | None = None):
+    def __init__(
+        self,
+        settings: AdvisorSettings | None = None,
+        runtime: Any | None = None,
+        trace_store: AdvisorTraceStore | None = None,
+    ):
         self.settings = settings or AdvisorSettings.load()
         self.settings.ensure_dirs()
         self.trace_store = trace_store or AdvisorTraceStore(self.settings.trace_db_path)
@@ -33,6 +38,9 @@ class AdvisorGateway:
         )
         self.runtime = runtime or MLXAdvisorRuntime(self.settings)
         self.validator = AdviceValidator()
+        warmup = getattr(self.runtime, "warmup", None)
+        if self.settings.warm_load_on_start and callable(warmup):
+            warmup()
 
     def system_health(self) -> dict:
         runtime_caps_fn = getattr(self.runtime, "capabilities", None)
@@ -78,7 +86,9 @@ class AdvisorGateway:
         advice = self.runtime.generate_advice(packet)
         latency_ms = int((time.perf_counter() - started) * 1000)
         safe_advice = self.validator.validate(advice)
-        prompt_hash = sha256((packet.task_text + self.settings.model_version).encode()).hexdigest()
+        prompt_hash = sha256(
+            (packet.task_text + self.settings.model_version).encode()
+        ).hexdigest()
         self.trace_store.record_task_run(
             packet,
             safe_advice,
@@ -98,7 +108,9 @@ class AdvisorGateway:
 
 def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = None):
     if FastAPI is None:
-        raise RuntimeError("fastapi is not installed. Install the web or advisor extras to create the HTTP app.")
+        raise RuntimeError(
+            "fastapi is not installed. Install the web or advisor extras to create the HTTP app."
+        )
 
     gateway = AdvisorGateway(settings=settings, runtime=runtime)
     app = FastAPI(title="Advisor", version=__version__)
