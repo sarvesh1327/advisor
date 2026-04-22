@@ -84,10 +84,11 @@ Current repo status:
 - no Hermes-specific Python references remain in this repo
 - config can now load from `ADVISOR_CONFIG=/path/to/advisor.toml`
 - health checks now expose runtime/config state on `/healthz`
-- CI workflow tests Python 3.11 and 3.12
+- CI workflow now runs lint-only on Python 3.12
 - Ruff linting is configured and passes locally
 - inference runtime now supports retries, timeout handling, warm-load, and fallback behavior
 - reward weights now support named config presets (`balanced`, `conservative`, `human-first`) plus explicit overrides
+- Phase 10 orchestration now supports executor/verifier plug-ins, deterministic A/B routing, replayable manifests, and optional second-pass review
 - GitHub CI installs `.[dev]` only, since MLX runtime deps are Apple-specific and not required for the test suite
 
 ## Contributing

@@ -95,14 +95,14 @@ Core rule:
 - [x] Add rollback criteria when a newly trained advisor regresses on baseline suites
 
 ## Phase 10 — Orchestration and live product loop
-- [ ] Add a first-class runner for advisor -> executor -> verifier -> reward capture
-- [ ] Make the canonical lineage generic-packet-first rather than coding-trace-first
-- [ ] Add pluggable executor interfaces for frontier chat APIs, coding agents, and future domain-specific workers
-- [ ] Add verifier interfaces for build/test checks, screenshot comparison, rubric graders, and human review
-- [ ] Persist full run lineage linking packet, advice, executor output, verifier output, and reward
-- [ ] Add replayable run manifests so experiments can be reproduced exactly
-- [ ] Add online A/B routing for baseline vs advisor-assisted execution
-- [ ] Add support for optional second-pass advisor review after executor output
+- [x] Add a first-class runner for advisor -> executor -> verifier -> reward capture
+- [x] Make the canonical lineage generic-packet-first rather than coding-trace-first
+- [x] Add pluggable executor interfaces for frontier chat APIs, coding agents, and future domain-specific workers
+- [x] Add verifier interfaces for build/test checks, screenshot comparison, rubric graders, and human review
+- [x] Persist full run lineage linking packet, advice, executor output, verifier output, and reward
+- [x] Add replayable run manifests so experiments can be reproduced exactly
+- [x] Add online A/B routing for baseline vs advisor-assisted execution
+- [x] Add support for optional second-pass advisor review after executor output
 
 ## Phase 11 — Security, privacy, and observability
 - [ ] Document stored data, reward logs, and retention expectations
