@@ -1,0 +1,9 @@
+default_profile_id = "coding-default"
+
+[profiles.coding-default]
+domain = "coding"
+description = "Default coding advisor profile"
+
+[profiles.image-ui]
+domain = "image-ui"
+description = "UI and image advisor profile"

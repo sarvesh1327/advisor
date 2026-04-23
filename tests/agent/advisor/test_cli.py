@@ -11,6 +11,8 @@ from agent.advisor.schemas import (
 from agent.advisor.settings import AdvisorSettings
 from agent.advisor.trace_store import AdvisorTraceStore
 
+DEFAULT_PROFILE_ID = "coding-default"
+
 
 class StubGateway:
     def __init__(self):
@@ -35,6 +37,7 @@ class StubGateway:
             run_id="run-123",
             advisor_input_packet=packet,
             advice_block=AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.9),
+            advisor_profile_id=kwargs.get("advisor_profile_id") or DEFAULT_PROFILE_ID,
             model_version="advisor-qwen25-3b-v1",
             latency_ms=12,
         )
@@ -66,15 +69,19 @@ def test_cli_run_prints_json(monkeypatch, tmp_path, capsys):
         "write_allowed=true",
         "--system-prompt",
         "You are a generic execution advisor.",
+        "--advisor-profile-id",
+        "image-ui",
     ])
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
 
     assert exit_code == 0
     assert payload["run_id"] == "run-123"
+    assert payload["advisor_profile_id"] == "image-ui"
     assert payload["advisor_input_packet"]["acceptance_criteria"] == ["tests pass"]
     assert payload["advisor_input_packet"]["tool_limits"] == {"write_allowed": True}
     assert gateway.calls[0]["system_prompt"] == "You are a generic execution advisor."
+    assert gateway.calls[0]["advisor_profile_id"] == "image-ui"
 
 
 

@@ -14,6 +14,8 @@ from agent.advisor.schemas import (
 )
 from agent.advisor.trace_store import AdvisorTraceStore
 
+DEFAULT_PROFILE_ID = "coding-default"
+
 
 def _packet(run_id: str = "run-1"):
     return AdvisorInputPacket(
@@ -38,12 +40,20 @@ def test_trace_store_roundtrip(tmp_path):
     advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
     outcome = AdvisorOutcome(run_id="run-1", status="success", files_touched=["main.py"], retries=1, tests_run=["pytest -q"], review_verdict="pass")
 
-    store.record_task_run(packet, advice, advisor_model="advisor-test", latency_ms=10, prompt_hash="abc")
+    store.record_task_run(
+        packet,
+        advice,
+        advisor_model="advisor-test",
+        advisor_profile_id=DEFAULT_PROFILE_ID,
+        latency_ms=10,
+        prompt_hash="abc",
+    )
     store.record_outcome(outcome)
 
     row = store.get_run("run-1")
     assert row is not None
     assert row["run_id"] == "run-1"
+    assert row["advisor_profile_id"] == DEFAULT_PROFILE_ID
     assert row["advice"]["recommended_plan"] == ["inspect main.py"]
     assert row["injected_advice"]["recommended_plan"] == ["inspect main.py"]
     assert row["injection_policy"] == {
@@ -118,6 +128,7 @@ def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
             injection_policy=ExecutorInjectionPolicy(min_confidence=0.5),
         ),
         advisor_model="advisor-test",
+        advisor_profile_id=DEFAULT_PROFILE_ID,
         latency_ms=12,
         prompt_hash="def",
         injected_rendered_advice="[Advisor hint — use as guidance, not authority]",
@@ -126,6 +137,7 @@ def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
     replay = store.get_run("run-generic")
 
     assert replay is not None
+    assert replay["advisor_profile_id"] == DEFAULT_PROFILE_ID
     assert replay["input"]["task"]["domain"] == "image-ui"
     assert replay["input"]["context"]["summary"] == "image-ui task context"
     assert replay["input"]["artifacts"] == [
@@ -157,7 +169,14 @@ def test_trace_store_records_reward_labels(tmp_path):
         review_verdict="pass",
     )
 
-    store.record_task_run(packet, advice, advisor_model="advisor-test", latency_ms=10, prompt_hash="abc")
+    store.record_task_run(
+        packet,
+        advice,
+        advisor_model="advisor-test",
+        advisor_profile_id=DEFAULT_PROFILE_ID,
+        latency_ms=10,
+        prompt_hash="abc",
+    )
     store.record_outcome(outcome)
     reward_label = compute_reward_label(packet, advice, outcome, human_rating=5.0)
 
@@ -193,6 +212,7 @@ def test_trace_store_prefers_prior_failures_with_changed_file_overlap(tmp_path):
             ),
             AdviceBlock(task_type="bugfix", recommended_plan=["inspect file"], confidence=0.5),
             advisor_model="advisor-test",
+            advisor_profile_id=DEFAULT_PROFILE_ID,
             latency_ms=5,
             prompt_hash=f"hash-{run_id}",
         )

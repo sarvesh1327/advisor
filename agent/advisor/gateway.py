@@ -16,6 +16,7 @@ from .operator_runtime import (
     build_deployment_profile,
     build_operator_snapshot,
 )
+from .profiles import AdvisorProfile, AdvisorProfileRegistry
 from .runtime_mlx import MLXAdvisorRuntime
 from .schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from .settings import AdvisorSettings
@@ -47,6 +48,7 @@ class AdvisorGateway:
             max_failures=self.settings.max_failures,
             token_budget=self.settings.token_budget,
         )
+        self.profile_registry = self._load_profile_registry()
         self.runtime = runtime or MLXAdvisorRuntime(self.settings)
         self.validator = AdviceValidator()
         warmup = getattr(self.runtime, "warmup", None)
@@ -70,6 +72,25 @@ class AdvisorGateway:
             "runtime": runtime_health,
         }
 
+    def _load_profile_registry(self) -> AdvisorProfileRegistry:
+        profiles_path = Path(self.settings.advisor_profiles_path).expanduser()
+        if profiles_path.exists():
+            return AdvisorProfileRegistry.from_toml(profiles_path)
+        # Fall back to a synthetic one-profile registry so existing local installs stay bootable.
+        return AdvisorProfileRegistry(
+            default_profile_id=self.settings.advisor_profile_id,
+            profiles={
+                self.settings.advisor_profile_id: AdvisorProfile(
+                    profile_id=self.settings.advisor_profile_id,
+                    domain="coding",
+                    description="Fallback profile created from runtime settings.",
+                )
+            },
+        )
+
+    def _resolve_profile_id(self, advisor_profile_id: str | None) -> str:
+        return self.profile_registry.resolve(advisor_profile_id).profile_id
+
     def task_run(
         self,
         *,
@@ -82,8 +103,10 @@ class AdvisorGateway:
         task_id: str | None = None,
         task_type_hint: str | None = None,
         system_prompt: str | None = None,
+        advisor_profile_id: str | None = None,
         changed_files: list[str] | None = None,
     ) -> AdvisorTaskRunResult:
+        resolved_profile_id = self._resolve_profile_id(advisor_profile_id)
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         packet = self.context_builder.build(
             task_text=task_text,
@@ -116,6 +139,7 @@ class AdvisorGateway:
             packet,
             safe_advice,
             advisor_model=self.settings.model_version,
+            advisor_profile_id=resolved_profile_id,
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
             validated=True,
@@ -126,6 +150,7 @@ class AdvisorGateway:
             run_id=run_id,
             advisor_input_packet=packet,
             advice_block=safe_advice,
+            advisor_profile_id=resolved_profile_id,
             model_version=self.settings.model_version,
             latency_ms=latency_ms,
         )
@@ -164,6 +189,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             task_id=req.task_id,
             task_type_hint=req.task_type_hint,
             system_prompt=req.system_prompt,
+            advisor_profile_id=req.advisor_profile_id,
             changed_files=req.changed_files,
         )
 

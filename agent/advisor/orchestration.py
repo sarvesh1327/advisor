@@ -232,6 +232,7 @@ class AdvisorOrchestrator:
             packet,
             primary_advice,
             advisor_model=self.settings.model_version,
+            advisor_profile_id=self.settings.advisor_profile_id,
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
             validated=True,
