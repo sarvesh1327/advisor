@@ -61,6 +61,14 @@ def test_create_http_app_includes_health_route(tmp_path):
     assert "/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval" in routes
     assert "/v1/operator/retention/enforce" in routes
     assert "/v1/validation/gate" in routes
+    assert "/v1/learning/controller" in routes
+    assert "/v1/learning/controller/pause" in routes
+    assert "/v1/learning/controller/resume" in routes
+    assert "/v1/learning/readiness/{advisor_profile_id}" in routes
+    assert "/v1/learning/profiles/{advisor_profile_id}/pause" in routes
+    assert "/v1/learning/profiles/{advisor_profile_id}/resume" in routes
+    assert "/v1/learning/profiles/{advisor_profile_id}/reset-backoff" in routes
+    assert "/v1/learning/tick" in routes
 
 
 def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
@@ -129,3 +137,21 @@ def test_validation_gate_route_reports_failed_jobs_and_missing_rollback(tmp_path
     payload = response.json()
     assert payload["pass"] is False
     assert "required_profiles" in payload["failed_checks"]
+
+
+
+def test_learning_controller_routes_expose_status_readiness_and_tick(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    app = create_http_app(settings=settings)
+    client = TestClient(app)
+
+    status_response = client.get("/v1/learning/controller")
+    readiness_response = client.get("/v1/learning/readiness/coding-default")
+    tick_response = client.post("/v1/learning/tick")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["controller_paused"] is False
+    assert readiness_response.status_code == 200
+    assert readiness_response.json()["advisor_profile_id"] == "coding-default"
+    assert tick_response.status_code == 200
+    assert "readiness" in tick_response.json()

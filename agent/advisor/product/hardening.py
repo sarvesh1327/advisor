@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.evaluation.measurement import build_phase5_measurement_report
+from agent.advisor.learning.state import AutonomousLearningStateStore, state_path_for_root
 from agent.advisor.operators.operator_runtime import OperatorJobRecord
 from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
@@ -81,6 +82,10 @@ def build_phase8_validation_report(
     return {
         "pass": not failed_checks,
         "failed_checks": failed_checks,
+        "code_complete": True,
+        "runtime_ready": not missing_profiles and failed_jobs_check["pass"],
+        "autonomous_learning_ready": _autonomous_learning_ready(lifecycle_manager),
+        "evidence_sufficient": not failed_checks,
         "policy": active_policy.model_dump(),
         "required_profiles": resolved_required_profiles,
         "missing_profiles": missing_profiles,
@@ -248,16 +253,25 @@ def _check_metric(actual: float, threshold: float) -> dict:
 def _build_phase8_job_summary(jobs: list[dict]) -> dict:
     counts = {
         "total": len(jobs),
-        "queued": 0,
-        "running": 0,
         "completed": 0,
         "failed": 0,
+        "queued": 0,
+        "running": 0,
     }
     for job in jobs:
         status = job.get("status")
         if status in counts:
             counts[status] += 1
     return counts
+
+
+
+def _autonomous_learning_ready(lifecycle_manager: CheckpointLifecycleManager) -> bool:
+    state_root = lifecycle_manager.artifacts_root.parent
+    state = AutonomousLearningStateStore(state_path_for_root(state_root)).load()
+    if not state.profiles:
+        return False
+    return any(profile.last_cycle_completed_at for profile in state.profiles.values())
 
 
 

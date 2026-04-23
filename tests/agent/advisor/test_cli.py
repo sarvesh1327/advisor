@@ -274,6 +274,24 @@ def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, 
     release_payload = json.loads(capsys.readouterr().out)
     validation_exit = cli.main(["validation-gate", "--required-profile", "coding-default"])
     validation_payload = json.loads(capsys.readouterr().out)
+    learning_status_exit = cli.main(["learning-controller-status"])
+    learning_status_payload = json.loads(capsys.readouterr().out)
+    learning_pause_exit = cli.main(["learning-controller-pause", "--reason", "maintenance"])
+    learning_pause_payload = json.loads(capsys.readouterr().out)
+    learning_resume_exit = cli.main(["learning-controller-resume"])
+    learning_resume_payload = json.loads(capsys.readouterr().out)
+    learning_readiness_exit = cli.main(["learning-readiness", "--advisor-profile-id", "coding-default"])
+    learning_readiness_payload = json.loads(capsys.readouterr().out)
+    learning_profile_pause_exit = cli.main(["learning-profile-pause", "--advisor-profile-id", "coding-default", "--reason", "bad-profile"])
+    learning_profile_pause_payload = json.loads(capsys.readouterr().out)
+    learning_profile_resume_exit = cli.main(["learning-profile-resume", "--advisor-profile-id", "coding-default"])
+    learning_profile_resume_payload = json.loads(capsys.readouterr().out)
+    learning_profile_reset_exit = cli.main(["learning-profile-reset-backoff", "--advisor-profile-id", "coding-default"])
+    learning_profile_reset_payload = json.loads(capsys.readouterr().out)
+    learning_tick_exit = cli.main(["learning-tick"])
+    learning_tick_payload = json.loads(capsys.readouterr().out)
+    learning_service_exit = cli.main(["learning-service", "--max-ticks", "1"])
+    learning_service_payload = json.loads(capsys.readouterr().out)
 
     assert hardening_exit == 0
     assert hardening_payload["mode"] == "hosted"
@@ -284,6 +302,24 @@ def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, 
     assert validation_exit == 0
     assert validation_payload["pass"] is False
     assert "required_profiles" in validation_payload["failed_checks"]
+    assert learning_status_exit == 0
+    assert learning_status_payload["controller_paused"] is False
+    assert learning_pause_exit == 0
+    assert learning_pause_payload["controller_paused"] is True
+    assert learning_resume_exit == 0
+    assert learning_resume_payload["controller_paused"] is False
+    assert learning_readiness_exit == 0
+    assert learning_readiness_payload["advisor_profile_id"] == "coding-default"
+    assert learning_profile_pause_exit == 0
+    assert learning_profile_pause_payload["paused"] is True
+    assert learning_profile_resume_exit == 0
+    assert learning_profile_resume_payload["paused"] is False
+    assert learning_profile_reset_exit == 0
+    assert learning_profile_reset_payload["consecutive_failures"] == 0
+    assert learning_tick_exit == 0
+    assert "readiness" in learning_tick_payload
+    assert learning_service_exit == 0
+    assert learning_service_payload["tick_count"] == 1
 
 
 def test_cli_export_and_import_bundle_commands(monkeypatch, tmp_path, capsys):

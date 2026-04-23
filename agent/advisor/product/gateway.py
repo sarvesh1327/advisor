@@ -15,6 +15,7 @@ from agent.advisor.core.schemas import AdvisorTaskRequest, AdvisorTaskRunResult
 from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.core.validator import AdviceValidator
 from agent.advisor.core.version import __version__
+from agent.advisor.learning.controller import AutonomousLearningController
 from agent.advisor.operators.operator_runtime import (
     OperatorJobQueue,
     OperatorJobRequest,
@@ -186,6 +187,13 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     active_settings = gateway.settings
     operator_queue = OperatorJobQueue(Path(active_settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
     lifecycle_manager = CheckpointLifecycleManager(Path(active_settings.trace_db_path).expanduser().parent / "artifacts")
+    learning_controller = AutonomousLearningController(
+        settings=active_settings,
+        trace_store=gateway.trace_store,
+        profile_registry=gateway.profile_registry,
+        queue=operator_queue,
+        lifecycle_manager=lifecycle_manager,
+    )
     deployment = build_deployment_profile(
         settings=active_settings,
         mode="hosted" if active_settings.hosted_mode else "single_tenant",
@@ -296,5 +304,37 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             job_records=operator_queue.list_jobs(),
             required_profiles=req.required_profiles,
         )
+
+    @app.get("/v1/learning/controller")
+    def learning_controller_status():
+        return learning_controller.controller_status()
+
+    @app.post("/v1/learning/controller/pause")
+    def learning_controller_pause(reason: str | None = None):
+        return learning_controller.pause_controller(reason=reason)
+
+    @app.post("/v1/learning/controller/resume")
+    def learning_controller_resume():
+        return learning_controller.resume_controller()
+
+    @app.get("/v1/learning/readiness/{advisor_profile_id}")
+    def learning_readiness(advisor_profile_id: str):
+        return learning_controller.readiness_report(advisor_profile_id)
+
+    @app.post("/v1/learning/profiles/{advisor_profile_id}/pause")
+    def learning_profile_pause(advisor_profile_id: str, reason: str | None = None):
+        return learning_controller.pause_profile(advisor_profile_id, reason=reason)
+
+    @app.post("/v1/learning/profiles/{advisor_profile_id}/resume")
+    def learning_profile_resume(advisor_profile_id: str):
+        return learning_controller.resume_profile(advisor_profile_id)
+
+    @app.post("/v1/learning/profiles/{advisor_profile_id}/reset-backoff")
+    def learning_profile_reset_backoff(advisor_profile_id: str):
+        return learning_controller.reset_profile_backoff(advisor_profile_id)
+
+    @app.post("/v1/learning/tick")
+    def learning_tick():
+        return learning_controller.tick()
 
     return app

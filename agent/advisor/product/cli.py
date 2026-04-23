@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.learning.controller import AutonomousLearningController
+from agent.advisor.learning.service import run_autonomous_learning_service
 from agent.advisor.operators.operator_runtime import (
     OperatorJobQueue,
     RetentionEnforcer,
@@ -101,6 +103,40 @@ def build_parser() -> argparse.ArgumentParser:
     validation_gate_parser = subparsers.add_parser("validation-gate", help="Evaluate the Phase 8 final validation gate from local state")
     validation_gate_parser.add_argument("--required-profile", action="append", default=[], help="Repeatable required advisor profile id")
     validation_gate_parser.set_defaults(handler=_handle_validation_gate)
+
+    learning_status_parser = subparsers.add_parser("learning-controller-status", help="Print autonomous learning controller state JSON")
+    learning_status_parser.set_defaults(handler=_handle_learning_controller_status)
+
+    learning_pause_parser = subparsers.add_parser("learning-controller-pause", help="Pause the autonomous learning controller")
+    learning_pause_parser.add_argument("--reason", default=None, help="Optional pause reason")
+    learning_pause_parser.set_defaults(handler=_handle_learning_controller_pause)
+
+    learning_resume_parser = subparsers.add_parser("learning-controller-resume", help="Resume the autonomous learning controller")
+    learning_resume_parser.set_defaults(handler=_handle_learning_controller_resume)
+
+    learning_readiness_parser = subparsers.add_parser("learning-readiness", help="Print autonomous learning readiness for a profile")
+    learning_readiness_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    learning_readiness_parser.set_defaults(handler=_handle_learning_readiness)
+
+    learning_profile_pause_parser = subparsers.add_parser("learning-profile-pause", help="Pause autonomous learning for one profile")
+    learning_profile_pause_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    learning_profile_pause_parser.add_argument("--reason", default=None, help="Optional pause reason")
+    learning_profile_pause_parser.set_defaults(handler=_handle_learning_profile_pause)
+
+    learning_profile_resume_parser = subparsers.add_parser("learning-profile-resume", help="Resume autonomous learning for one profile")
+    learning_profile_resume_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    learning_profile_resume_parser.set_defaults(handler=_handle_learning_profile_resume)
+
+    learning_profile_reset_parser = subparsers.add_parser("learning-profile-reset-backoff", help="Reset autonomous learning backoff for one profile")
+    learning_profile_reset_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    learning_profile_reset_parser.set_defaults(handler=_handle_learning_profile_reset_backoff)
+
+    learning_tick_parser = subparsers.add_parser("learning-tick", help="Run one autonomous learning controller tick")
+    learning_tick_parser.set_defaults(handler=_handle_learning_tick)
+
+    learning_service_parser = subparsers.add_parser("learning-service", help="Run the autonomous learning service loop")
+    learning_service_parser.add_argument("--max-ticks", type=int, default=1, help="Maximum controller ticks to run")
+    learning_service_parser.set_defaults(handler=_handle_learning_service)
 
     export_bundle_parser = subparsers.add_parser("export-bundle", help="Export product state bundle")
     export_bundle_parser.add_argument("--output-dir", required=True, help="Destination bundle directory")
@@ -282,6 +318,81 @@ def _handle_validation_gate(args) -> int:
         required_profiles=args.required_profile,
     )
     print(json.dumps(report, ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_controller_status(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.controller_status(), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_controller_pause(args) -> int:
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.pause_controller(reason=args.reason), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_controller_resume(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.resume_controller(), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_readiness(args) -> int:
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.readiness_report(args.advisor_profile_id), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_profile_pause(args) -> int:
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.pause_profile(args.advisor_profile_id, reason=args.reason), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_profile_resume(args) -> int:
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.resume_profile(args.advisor_profile_id), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_profile_reset_backoff(args) -> int:
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.reset_profile_backoff(args.advisor_profile_id), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_tick(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    controller = AutonomousLearningController(settings=settings)
+    print(json.dumps(controller.tick(), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_learning_service(args) -> int:
+    settings = AdvisorSettings.load()
+    result = run_autonomous_learning_service(settings=settings, max_ticks=args.max_ticks, sleep_fn=lambda _: None)
+    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 
