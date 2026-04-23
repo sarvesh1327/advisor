@@ -39,38 +39,38 @@ Core rule:
 - [ ] Make the generic packet (`task`, `context`, `artifacts`, `constraints`, `history`, `acceptance_criteria`, `domain_capabilities`) the canonical packet surface
 - [ ] Keep coding-only packet fields as compatibility fields or adapter extensions, not the primary abstraction
 - [x] Add a coding adapter that maps repos/files/failures into the generic packet
-- [ ] Add an image-or-UI adapter that maps references/screenshots/layout constraints into the generic packet
+- [x] Add an image-or-UI adapter that maps references/screenshots/layout constraints into the generic packet
 - [x] Add a research-or-writing adapter that maps sources/notes/objectives into the generic packet
 - [x] Add domain capability descriptors so runtimes know which packet fields they can use
-- [ ] Move canonical trace/replay storage toward generic packet fields rather than coding-only fields
+- [x] Move canonical trace/replay storage toward generic packet fields rather than coding-only fields
 - [ ] Improve candidate artifact ranking within adapters
 - [x] Add changed-artifact awareness
-- [ ] Add symbol/region extraction hooks where the domain supports them
-- [ ] Improve retrieval of recent failures / prior attempts
-- [ ] Handle large task contexts more predictably with budgeted packing
-- [ ] Add adapter-specific artifact exclusion rules (for example build outputs, generated assets, cached artifacts)
+- [x] Add symbol/region extraction hooks where the domain supports them
+- [x] Improve retrieval of recent failures / prior attempts
+- [x] Handle large task contexts more predictably with budgeted packing
+- [x] Add adapter-specific artifact exclusion rules (for example build outputs, generated assets, cached artifacts)
 
 ## Phase 6 — Advice schema and injection layer
-- [ ] Define a generic advice schema with domain-neutral fields (`focus_targets`, `recommended_plan`, `avoid`, `likely_failure_modes`, `confidence`, `notes`)
-- [ ] Make the generic advice schema the canonical stored/rendered form
-- [ ] Preserve coding-specific convenience fields only as adapter extensions, not core requirements
+- [x] Define a generic advice schema with domain-neutral fields (`focus_targets`, `recommended_plan`, `avoid`, `likely_failure_modes`, `confidence`, `notes`)
+- [x] Make the generic advice schema the canonical stored/rendered form
+- [x] Preserve coding-specific convenience fields only as adapter extensions, not core requirements
 - [ ] Add advice rendering templates for different executor types (chat model, agent loop, API client, human operator)
 - [ ] Add prompt builders that inject advice without assuming a coding workflow
 - [ ] Remove coding-first examples and wording from the default runtime prompt unless supplied by a coding adapter
-- [ ] Add executor-side policy for how advice is prepended, merged, or gated
-- [ ] Add structured trace capture for exactly what advice was injected into each executor run
-- [ ] Add calibration guidance for confidence and abstention behavior
+- [x] Add executor-side policy for how advice is prepended, merged, or gated
+- [x] Add structured trace capture for exactly what advice was injected into each executor run
+- [x] Add calibration guidance for confidence and abstention behavior
 
 ## Phase 7 — Evaluation and replay
 - [ ] Add golden eval fixtures for each supported domain
-- [ ] Define fixture schema with frozen generic packet input, expected good guidance targets, and anti-targets
-- [ ] Add offline steering scorer for artifact targeting, plan quality, failure-mode quality, and noisy-target rate
-- [ ] Make replay operate on the canonical generic packet, not coding-only trace assumptions
-- [ ] Add replay harness for stored traces
+- [x] Define fixture schema with frozen generic packet input, expected good guidance targets, and anti-targets
+- [x] Add offline steering scorer for artifact targeting, plan quality, failure-mode quality, and noisy-target rate
+- [x] Make replay operate on the canonical generic packet, not coding-only trace assumptions
+- [x] Add replay harness for stored traces
 - [ ] Re-run current advisor versions against historical packets and compare against prior advice and fixture labels
 - [ ] Measure no-advisor vs advisor executor behavior on the same tasks with the same black-box model
 - [ ] Track comparative metrics beyond basic hit-rate (task success, retries, wall-clock time, token use, dead-end first moves, unnecessary edits, artifact-target rate)
-- [ ] Add human review rubric for advice usefulness, over-steering, and calibration
+- [x] Add human review rubric for advice usefulness, over-steering, and calibration
 - [ ] Add regression-oriented eval docs and locked hard-case suites
 
 ## Phase 8 — Reward system and training data pipeline

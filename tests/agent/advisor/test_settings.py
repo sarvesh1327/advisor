@@ -3,13 +3,23 @@ import textwrap
 import pytest
 
 from agent.advisor.reward_model import RewardWeights
-from agent.advisor.settings import AdvisorSettings, get_default_advisor_home
+from agent.advisor.settings import (
+    AdvisorSettings,
+    get_default_advisor_home,
+    get_default_profiles_path,
+)
 
 
 def test_get_default_advisor_home_prefers_explicit_env(monkeypatch, tmp_path):
     custom_home = tmp_path / "advisor-home"
     monkeypatch.setenv("ADVISOR_HOME", str(custom_home))
     assert get_default_advisor_home() == custom_home
+
+
+
+def test_get_default_profiles_path_points_to_repo_config():
+    assert get_default_profiles_path().name == "advisor_profiles.toml"
+    assert get_default_profiles_path().parent.name == "config"
 
 
 
@@ -30,6 +40,8 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "logs" / "events.jsonl"))
     monkeypatch.setenv("ADVISOR_REDACT_SENSITIVE_FIELDS", "true")
     monkeypatch.setenv("ADVISOR_HOSTED_MODE", "true")
+    monkeypatch.setenv("ADVISOR_PROFILE_ID", "coding-default")
+    monkeypatch.setenv("ADVISOR_PROFILES_PATH", str(tmp_path / "profiles.toml"))
 
     settings = AdvisorSettings.from_env()
 
@@ -49,6 +61,8 @@ def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     assert settings.event_log_path == str(advisor_home / "logs" / "events.jsonl")
     assert settings.redact_sensitive_fields is True
     assert settings.hosted_mode is True
+    assert settings.advisor_profile_id == "coding-default"
+    assert settings.advisor_profiles_path == str(tmp_path / "profiles.toml")
 
 
 
@@ -74,6 +88,8 @@ def test_settings_from_toml_file_loads_values(tmp_path):
             enable_fallback_runtime = true
             fallback_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
             reward_preset = "conservative"
+            advisor_profile_id = "image-ui"
+            advisor_profiles_path = "/tmp/advisor/profiles.toml"
             [reward_weights]
             task_success = 0.4
             efficiency = 0.1
@@ -98,6 +114,8 @@ def test_settings_from_toml_file_loads_values(tmp_path):
     assert settings.enable_fallback_runtime is True
     assert settings.fallback_model_name == "mlx-community/Qwen2.5-3B-Instruct-4bit"
     assert settings.reward_preset == "conservative"
+    assert settings.advisor_profile_id == "image-ui"
+    assert settings.advisor_profiles_path == "/tmp/advisor/profiles.toml"
     assert settings.reward_weights() == RewardWeights(
         task_success=0.4,
         efficiency=0.1,

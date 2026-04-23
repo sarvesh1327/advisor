@@ -57,6 +57,7 @@ from .orchestration import (
     RubricVerifier,
     ScreenshotComparisonVerifier,
 )
+from .profiles import AdvisorProfile, AdvisorProfileRegistry
 from .results_pass import (
     build_failure_taxonomy,
     build_phase16_results_report,
@@ -89,6 +90,8 @@ __all__ = [
     "__version__",
     "AdviceBlock",
     "AdvisorGateway",
+    "AdvisorProfile",
+    "AdvisorProfileRegistry",
     "AdvisorInputPacket",
     "AdvisorOrchestrator",
     "AdvisorOutcome",

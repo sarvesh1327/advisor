@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--branch", default=None, help="Optional git branch hint")
     run_parser.add_argument("--task-type-hint", default=None, help="Optional task type override")
     run_parser.add_argument("--system-prompt", default=None, help="Optional advisor system prompt override")
+    run_parser.add_argument("--advisor-profile-id", default=None, help="Optional advisor profile override")
     run_parser.add_argument("--acceptance-criterion", action="append", default=[], help="Repeatable acceptance criteria")
     run_parser.add_argument("--tool-limit", action="append", default=[], help="Repeatable tool limit in key=value form")
     run_parser.set_defaults(handler=_handle_run)
@@ -97,6 +98,7 @@ def _handle_run(args) -> int:
         acceptance_criteria=args.acceptance_criterion,
         task_type_hint=args.task_type_hint,
         system_prompt=args.system_prompt,
+        advisor_profile_id=args.advisor_profile_id,
     )
     print(json.dumps(result.model_dump(), ensure_ascii=False))
     return 0

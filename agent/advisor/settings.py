@@ -22,6 +22,11 @@ def get_default_advisor_home() -> Path:
     return Path.home() / ".advisor"
 
 
+def get_default_profiles_path() -> Path:
+    # Keep the default profile registry with the repo config so profile selection stays deterministic in local development.
+    return Path(__file__).resolve().parents[2] / "config" / "advisor_profiles.toml"
+
+
 class AdvisorSettings(BaseModel):
     # Defaults describe the standalone local runtime; callers can override through TOML or env.
     enabled: bool = False
@@ -48,6 +53,8 @@ class AdvisorSettings(BaseModel):
     enable_fallback_runtime: bool = True
     reward_preset: str = "balanced"
     reward_weights_config: dict[str, float] = Field(default_factory=dict, alias="reward_weights")
+    advisor_profile_id: str = "default"
+    advisor_profiles_path: str = str(get_default_profiles_path())
     retention_days: int = 30
     event_log_path: str = str(get_default_advisor_home() / "events.jsonl")
     redact_sensitive_fields: bool = True
@@ -164,6 +171,8 @@ class AdvisorSettings(BaseModel):
             in {"1", "true", "yes", "on"},
             reward_preset=os.getenv("ADVISOR_REWARD_PRESET", "balanced"),
             reward_weights=reward_weights,
+            advisor_profile_id=os.getenv("ADVISOR_PROFILE_ID", "default"),
+            advisor_profiles_path=os.getenv("ADVISOR_PROFILES_PATH", str(get_default_profiles_path())),
             retention_days=int(os.getenv("ADVISOR_RETENTION_DAYS", "30")),
             event_log_path=os.getenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "events.jsonl")),
             redact_sensitive_fields=os.getenv("ADVISOR_REDACT_SENSITIVE_FIELDS", "1").lower()
@@ -206,6 +215,8 @@ class AdvisorSettings(BaseModel):
             "enable_fallback_runtime": self.enable_fallback_runtime,
             "reward_preset": self.reward_preset,
             "reward_weights": self.reward_weights().__dict__,
+            "advisor_profile_id": self.advisor_profile_id,
+            "advisor_profiles_path": self.advisor_profiles_path,
             "retention_days": self.retention_days,
             "event_log_path": self.event_log_path,
             "redact_sensitive_fields": self.redact_sensitive_fields,

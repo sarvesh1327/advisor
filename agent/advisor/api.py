@@ -60,6 +60,7 @@ def run_task(
     task_id: str | None = None,
     task_type_hint: str | None = None,
     system_prompt: str | None = None,
+    advisor_profile_id: str | None = None,
     changed_files: list[str] | None = None,
 ) -> AdvisorTaskRunResult:
     # Create a default gateway lazily so callers can inject their own runtime/store in tests.
@@ -74,6 +75,7 @@ def run_task(
         task_id=task_id,
         task_type_hint=task_type_hint,
         system_prompt=system_prompt,
+        advisor_profile_id=advisor_profile_id,
         changed_files=changed_files,
     )
 
