@@ -25,6 +25,7 @@ from agent.advisor.operators.operator_runtime import (
     inspect_profile_checkpoints,
     run_operator_job,
 )
+from agent.advisor.product.hardening import build_phase8_validation_report
 from agent.advisor.profiles import AdvisorProfile, AdvisorProfileRegistry
 from agent.advisor.runtime.runtime_mlx import MLXAdvisorRuntime
 from agent.advisor.storage.trace_store import AdvisorTraceStore
@@ -171,6 +172,10 @@ class ForceProfileEvalRequest(BaseModel):
     promotion_threshold: float = 0.05
 
 
+class ValidationGateRequest(BaseModel):
+    required_profiles: list[str] = []
+
+
 def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = None):
     if FastAPI is None:
         raise RuntimeError(
@@ -283,5 +288,13 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     @app.post("/v1/operator/retention/enforce")
     def operator_retention_enforce():
         return retention.enforce()
+
+    @app.post("/v1/validation/gate")
+    def validation_gate(req: ValidationGateRequest):
+        return build_phase8_validation_report(
+            lifecycle_manager=lifecycle_manager,
+            job_records=operator_queue.list_jobs(),
+            required_profiles=req.required_profiles,
+        )
 
     return app

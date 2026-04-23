@@ -405,7 +405,12 @@ def enqueue_forced_profile_eval(
     resolved_resume_token = resume_token or (
         f"forced-eval:{advisor_profile_id}:{candidate_checkpoint_id}:{_payload_fingerprint(payload)}"
     )
-    return queue.enqueue_job(job_type="eval-profile", payload=payload, resume_token=resolved_resume_token)
+    return _enqueue_or_reuse_job(
+        queue,
+        job_type="eval-profile",
+        payload=payload,
+        resume_token=resolved_resume_token,
+    )
 
 
 def run_operator_job(
