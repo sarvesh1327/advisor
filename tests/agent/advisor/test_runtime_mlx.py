@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.advisor import runtime_mlx
+from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.runtime_mlx import MLXAdvisorRuntime
 from agent.advisor.schemas import AdvisorInputPacket, CandidateFile, RepoSummary
 from agent.advisor.settings import AdvisorSettings
@@ -128,6 +129,63 @@ def test_runtime_prompt_includes_generic_packet_fields():
     assert "HISTORY:" in prompt
     assert "DOMAIN_CAPABILITIES:" in prompt
     assert "FOCUS_TARGETS" in prompt
+
+
+def test_runtime_resolves_profile_training_spec_with_real_lora_metadata(tmp_path):
+    config_path = tmp_path / "profiles.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+                'description = "Default coding advisor profile"',
+                "",
+                "[profiles.coding-default.training]",
+                'backend = "grpo"',
+                'base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"',
+                'adapter_method = "lora"',
+                "rollout_group_size = 4",
+                "num_generations = 8",
+                "max_steps = 12",
+                "max_prompt_tokens = 4096",
+                "max_completion_tokens = 1024",
+                'checkpoint_root = "checkpoints/coding-default"',
+                "lora_rank = 32",
+                "lora_alpha = 64",
+                "lora_dropout = 0.05",
+                'target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    registry = AdvisorProfileRegistry.from_toml(config_path)
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+
+    spec = runtime.resolve_profile_training_spec(registry, "coding-default")
+
+    assert spec["base_model_name"] == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    assert spec["adapter_method"] == "lora"
+    assert spec["lora_rank"] == 32
+    assert spec["target_modules"] == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
+
+
+def test_runtime_raises_clear_error_when_adapter_artifact_is_missing(tmp_path):
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+    checkpoint_dir = tmp_path / "checkpoints" / "coding-default-ckpt"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(FileNotFoundError, match="adapter artifact"):
+        runtime.resolve_adapter_artifact(checkpoint_dir)
 
 
 

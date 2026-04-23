@@ -67,6 +67,12 @@ def test_profile_registry_loads_profile_training_config_from_toml(tmp_path):
             max_prompt_tokens = 4096
             max_completion_tokens = 1024
             checkpoint_root = "artifacts/checkpoints/coding-default"
+            base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+            adapter_method = "lora"
+            lora_rank = 32
+            lora_alpha = 64
+            lora_dropout = 0.05
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
             """
         ).strip()
     )
@@ -79,3 +85,15 @@ def test_profile_registry_loads_profile_training_config_from_toml(tmp_path):
     assert profile.training.rollout_group_size == 4
     assert profile.training.num_generations == 8
     assert profile.training.checkpoint_root == "artifacts/checkpoints/coding-default"
+    assert profile.training.base_model_name == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    assert profile.training.adapter_method == "lora"
+    assert profile.training.lora_rank == 32
+    assert profile.training.target_modules == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]

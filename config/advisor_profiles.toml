@@ -13,6 +13,12 @@ max_steps = 12
 max_prompt_tokens = 4096
 max_completion_tokens = 1024
 checkpoint_root = "checkpoints/coding-default"
+base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+adapter_method = "lora"
+lora_rank = 32
+lora_alpha = 64
+lora_dropout = 0.05
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 [profiles.image-ui]
 domain = "image-ui"

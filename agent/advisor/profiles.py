@@ -14,6 +14,29 @@ class AdvisorTrainingConfig(BaseModel):
     max_prompt_tokens: int
     max_completion_tokens: int
     checkpoint_root: str
+    base_model_name: str | None = None
+    adapter_method: str | None = None
+    lora_rank: int | None = None
+    lora_alpha: int | None = None
+    lora_dropout: float = 0.0
+    target_modules: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_adapter_settings(self) -> "AdvisorTrainingConfig":
+        # Keep training config permissive by default, but validate explicit LoRA settings tightly.
+        if self.adapter_method is None:
+            return self
+        if self.adapter_method != "lora":
+            raise ValueError(f"unsupported adapter_method: {self.adapter_method}")
+        if self.lora_rank is None or self.lora_rank <= 0:
+            raise ValueError("lora_rank must be > 0 when adapter_method='lora'")
+        if not self.target_modules:
+            raise ValueError("target_modules must be set when adapter_method='lora'")
+        if self.lora_alpha is not None and self.lora_alpha <= 0:
+            raise ValueError("lora_alpha must be > 0 when provided")
+        if not 0.0 <= self.lora_dropout <= 1.0:
+            raise ValueError("lora_dropout must be between 0.0 and 1.0")
+        return self
 
 
 class AdvisorProfile(BaseModel):
