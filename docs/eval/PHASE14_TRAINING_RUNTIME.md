@@ -16,7 +16,8 @@ The repo now provides:
   - records checkpoint metadata, lifecycle state, benchmark summary, rollback reason, and advisor profile ownership
 - `CheckpointLifecycleManager`
   - registers candidate checkpoints
-  - promotes checkpoints to active
+  - resolves checkpoints and active checkpoints per advisor profile
+  - promotes checkpoints to active without disturbing other profiles
   - rolls checkpoints back with an explicit reason
   - persists a checkpoint registry
   - persists a training manifest for each job
@@ -25,6 +26,11 @@ The repo now provides:
   - compares candidate vs baseline benchmark summaries
   - reports deltas
   - recommends promotion vs rollback
+- `evaluate_profile_checkpoint_for_promotion()`
+  - filters benchmark manifests by `advisor_profile_id`
+  - compares candidate vs active checkpoint summaries for the same profile
+  - promotes only on passing profile-local benchmark deltas
+  - rolls back failed candidates with an explicit recorded reason
 - `training_rollouts.py`
   - defines single-rollout and grouped-rollout contracts
   - supports both single-turn and multi-turn rollout payloads
@@ -52,11 +58,14 @@ This gives later real trainer backends a stable place to write outputs and consu
 
 ## Promotion / rollback contract
 
-Promotion and rollback are now benchmark-driven:
+Promotion and rollback are now benchmark-driven and profile-local:
+- filter benchmark inputs by `advisor_profile_id`
+- compare the candidate only against the active checkpoint/baseline surface for that same profile
 - promote when candidate exceeds the configured threshold
 - rollback when benchmark deltas regress below zero
+- fail clearly when no matching profile-local benchmark manifests exist
 
-This keeps checkpoint lifecycle decisions grounded in measured outcomes rather than operator intuition.
+This keeps checkpoint lifecycle decisions grounded in measured outcomes rather than operator intuition or cross-profile leakage.
 
 ## Manifest contract
 
@@ -89,7 +98,8 @@ This is the minimum experiment-trace surface needed before heavier training back
 
 Phase 15 can now build on:
 - persisted checkpoint registry state
+- profile-local active/candidate checkpoint lookup
 - stable artifact directory conventions
 - persisted training manifests
 - persisted rollout-group manifests
-- explicit promotion / rollback decisions derived from benchmark summaries
+- explicit promotion / rollback decisions derived from profile-local benchmark summaries
