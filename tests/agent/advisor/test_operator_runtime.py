@@ -14,6 +14,8 @@ from agent.advisor.operators.operator_runtime import (
     TrainProfileJobPayload,
     build_deployment_profile,
     build_operator_snapshot,
+    enqueue_forced_profile_eval,
+    inspect_profile_checkpoints,
     run_continuous_training_cycle,
     run_operator_job,
 )
@@ -177,6 +179,71 @@ def test_operator_job_queue_persists_and_resumes_incomplete_jobs(tmp_path):
     assert persisted[0].resume_token == "suite-core"
 
 
+
+def test_operator_queue_pause_resume_and_forced_eval_checkpoint_helpers(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    checkpoint_dir = tmp_path / "artifacts" / "checkpoints" / "coding-default" / "ckpt-operator"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_manifest = checkpoint_dir / "checkpoint.json"
+    checkpoint_manifest.write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "ckpt-operator",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {"adapter_model": str(checkpoint_dir / "adapters.safetensors")},
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="ckpt-operator",
+            experiment_id="exp-operator",
+            path=str(checkpoint_dir),
+            status="active",
+            advisor_profile_id="coding-default",
+            benchmark_summary={"overall_score": 0.81},
+        )
+    )
+
+    paused = queue.pause(reason="maintenance window")
+    checkpoints = inspect_profile_checkpoints(manager, advisor_profile_id="coding-default")
+
+    assert paused["paused"] is True
+    assert paused["reason"] == "maintenance window"
+    assert checkpoints[0]["checkpoint_id"] == "ckpt-operator"
+    assert checkpoints[0]["artifact_paths"]["adapter_model"].endswith("adapters.safetensors")
+
+    try:
+        enqueue_forced_profile_eval(
+            queue,
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-operator",
+            benchmark_manifests=[],
+        )
+    except ValueError as exc:
+        assert "paused" in str(exc)
+    else:
+        raise AssertionError("expected paused queue to reject forced eval enqueue")
+
+    resumed = queue.resume_queue()
+    eval_job = enqueue_forced_profile_eval(
+        queue,
+        advisor_profile_id="coding-default",
+        candidate_checkpoint_id="ckpt-operator",
+        benchmark_manifests=[],
+        promotion_threshold=0.15,
+    )
+
+    assert resumed["paused"] is False
+    assert eval_job.job_type == "eval-profile"
+    assert eval_job.payload["candidate_checkpoint_id"] == "ckpt-operator"
+    assert eval_job.payload["promotion_threshold"] == 0.15
+
+
+
 def test_operator_job_queue_rejects_unknown_job_types_and_invalid_payloads(tmp_path):
     queue = OperatorJobQueue(tmp_path / "jobs.json")
 
@@ -193,6 +260,7 @@ def test_operator_job_queue_rejects_unknown_job_types_and_invalid_payloads(tmp_p
         assert "experiment_id" in str(exc)
     else:
         raise AssertionError("expected invalid train-profile payload to raise ValueError")
+
 
 
 def test_run_operator_job_executes_train_and_eval_jobs_with_structured_results(tmp_path):

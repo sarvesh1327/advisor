@@ -117,6 +117,130 @@ def test_cli_operator_overview_prints_json(monkeypatch, tmp_path, capsys):
     assert payload["live_metrics"]["total_runs"] == 0
 
 
+
+def test_cli_operator_checkpoint_and_queue_controls_print_json(monkeypatch, tmp_path, capsys):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    store = AdvisorTraceStore(settings.trace_db_path)
+
+    class StubGatewayWithStore:
+        def __init__(self, trace_store):
+            self.trace_store = trace_store
+            self.profile_registry = None
+
+    checkpoint_dir = tmp_path / "artifacts" / "checkpoints" / "coding-default" / "ckpt-cli"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "adapters.safetensors").write_bytes(b"adapter")
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "ckpt-cli",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {"adapter_model": str(checkpoint_dir / "adapters.safetensors")},
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "checkpoint_registry.json"
+    registry_path.write_text(
+        json.dumps(
+            [
+                {
+                    "checkpoint_id": "ckpt-cli",
+                    "experiment_id": "exp-cli",
+                    "path": str(checkpoint_dir),
+                    "status": "active",
+                    "benchmark_summary": {"overall_score": 0.82},
+                    "advisor_profile_id": "coding-default",
+                    "rollback_reason": None,
+                }
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    benchmark_manifests_path = tmp_path / "benchmark-manifests.json"
+    benchmark_manifests_path.write_text(
+        json.dumps(
+            [
+                {
+                    "run_id": "baseline-run",
+                    "fixture_id": "coding-main",
+                    "domain": "coding",
+                    "split": "validation",
+                    "packet_hash": "abc",
+                    "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+                    "verifier_set": ["build-check"],
+                    "routing_arm": "baseline",
+                    "reward_version": "phase8-v1",
+                    "score": {"overall_score": 0.5, "focus_target_recall": 0.5},
+                },
+                {
+                    "run_id": "advisor-run",
+                    "fixture_id": "coding-main",
+                    "domain": "coding",
+                    "split": "validation",
+                    "packet_hash": "abc",
+                    "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+                    "verifier_set": ["build-check"],
+                    "routing_arm": "advisor",
+                    "advisor_profile_id": "coding-default",
+                    "reward_version": "phase8-v1",
+                    "score": {"overall_score": 0.7, "focus_target_recall": 0.7},
+                },
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+    monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: StubGatewayWithStore(store))
+    monkeypatch.setattr(cli, "_build_lifecycle_manager", lambda settings: cli.CheckpointLifecycleManager(tmp_path))
+
+    pause_exit = cli.main(["operator-queue-pause", "--reason", "maintenance window"])
+    pause_payload = json.loads(capsys.readouterr().out)
+    queue_exit = cli.main(["operator-queue-status"])
+    queue_payload = json.loads(capsys.readouterr().out)
+    checkpoints_exit = cli.main(["operator-checkpoints", "--advisor-profile-id", "coding-default"])
+    checkpoints_payload = json.loads(capsys.readouterr().out)
+    resume_exit = cli.main(["operator-queue-resume"])
+    resume_payload = json.loads(capsys.readouterr().out)
+    force_eval_exit = cli.main(
+        [
+            "operator-force-eval",
+            "--advisor-profile-id",
+            "coding-default",
+            "--checkpoint-id",
+            "ckpt-cli",
+            "--benchmark-manifests-path",
+            str(benchmark_manifests_path),
+            "--promotion-threshold",
+            "0.2",
+        ]
+    )
+    force_eval_payload = json.loads(capsys.readouterr().out)
+
+    assert pause_exit == 0
+    assert pause_payload["paused"] is True
+    assert queue_exit == 0
+    assert queue_payload["paused"] is True
+    assert checkpoints_exit == 0
+    assert checkpoints_payload[0]["checkpoint_id"] == "ckpt-cli"
+    assert resume_exit == 0
+    assert resume_payload["paused"] is False
+    assert force_eval_exit == 0
+    assert force_eval_payload["job_type"] == "eval-profile"
+    assert force_eval_payload["payload"]["candidate_checkpoint_id"] == "ckpt-cli"
+    assert force_eval_payload["payload"]["promotion_threshold"] == 0.2
+    assert len(force_eval_payload["payload"]["benchmark_manifests"]) == 2
+    assert force_eval_payload["payload"]["benchmark_manifests"][0]["routing_arm"] == "baseline"
+    assert force_eval_payload["payload"]["benchmark_manifests"][1]["routing_arm"] == "advisor"
+
+
+
 def test_cli_deployment_profile_respects_mode_override(monkeypatch, tmp_path, capsys):
     settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
     monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
