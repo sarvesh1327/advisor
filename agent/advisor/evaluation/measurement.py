@@ -140,7 +140,8 @@ def _find_completed_job(
     checkpoint_id: str | None,
     experiment_id: str | None,
 ) -> dict | None:
-    for job in sorted(jobs, key=lambda item: (item.get("created_at") or "", item.get("job_id") or "")):
+    ordered = sorted(jobs, key=lambda item: (item.get("created_at") or "", item.get("job_id") or ""), reverse=True)
+    for job in ordered:
         if job.get("job_type") != job_type or job.get("status") != "completed":
             continue
         payload = job.get("payload") or {}
@@ -224,11 +225,11 @@ def _hash_path(path: str) -> str | None:
 
 
 
-def _resolve_promoted(eval_result: dict, promote_result: dict) -> bool:
+def _resolve_promoted(eval_result: dict, promote_result: dict) -> bool | None:
     if eval_result.get("promote") is not True:
         return False
     if not promote_result:
-        return True
+        return None
     if promote_result.get("status") == "noop":
         return True
-    return bool(promote_result.get("promoted", True))
+    return bool(promote_result.get("promoted", False))

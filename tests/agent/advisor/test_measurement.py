@@ -306,3 +306,118 @@ def test_build_phase5_measurement_report_keeps_profiles_isolated(tmp_path):
     assert report["profiles"]["researcher"]["checkpoint_history"][0]["rollback_reason"] == "regression detected"
     assert report["profiles"]["researcher"]["trend_history"][0]["promoted"] is False
     assert report["profiles"]["researcher"]["trend_history"][0]["eval_delta"]["overall_score"] == -0.07
+
+
+
+def test_build_phase5_measurement_report_does_not_mark_promotion_without_completed_promote_job(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+
+    _write_checkpoint(
+        manager,
+        profile_id="coding-default",
+        checkpoint_id="ckpt-pending-promote",
+        experiment_id="exp-pending-promote",
+        status="candidate",
+        artifact_bytes=b"pending-promote",
+    )
+    _enqueue_cycle_jobs(
+        queue,
+        experiment_id="exp-pending-promote",
+        profile_id="coding-default",
+        checkpoint_id="ckpt-pending-promote",
+        overall_delta=0.14,
+        recall_delta=0.09,
+        promote=False,
+    )
+    eval_job = queue.list_jobs()[-1]
+    queue.update_job(
+        eval_job.job_id,
+        status="completed",
+        result={
+            "advisor_profile_id": "coding-default",
+            "candidate_checkpoint_id": "ckpt-pending-promote",
+            "promotion_threshold": 0.05,
+            "candidate_summary": {"overall_score": 0.64, "focus_target_recall": 0.59},
+            "baseline_summary": {"overall_score": 0.5, "focus_target_recall": 0.5},
+            "deltas": {"overall_score": 0.14, "focus_target_recall": 0.09},
+            "promote": True,
+            "rollback": False,
+            "decision_reason": "promote recommended but not completed",
+        },
+    )
+
+    report = build_phase5_measurement_report(
+        lifecycle_manager=manager,
+        job_records=queue.list_jobs(),
+    )
+
+    trend = report["profiles"]["coding-default"]["trend_history"][0]
+
+    assert trend["promote_decision"] is True
+    assert trend["promote_job_id"] is None
+    assert trend["promoted"] is None
+    assert report["profiles"]["coding-default"]["summary"]["promoted_cycle_count"] == 0
+
+
+
+def test_build_phase5_measurement_report_prefers_latest_matching_completed_eval_job(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+
+    _write_checkpoint(
+        manager,
+        profile_id="coding-default",
+        checkpoint_id="ckpt-latest-eval",
+        experiment_id="exp-latest-eval",
+        status="candidate",
+        artifact_bytes=b"latest-eval",
+    )
+    _enqueue_cycle_jobs(
+        queue,
+        experiment_id="exp-latest-eval",
+        profile_id="coding-default",
+        checkpoint_id="ckpt-latest-eval",
+        overall_delta=0.04,
+        recall_delta=0.02,
+        promote=False,
+        promotion_threshold=0.05,
+    )
+    queue.enqueue_job(
+        job_type="eval-profile",
+        payload={
+            "advisor_profile_id": "coding-default",
+            "candidate_checkpoint_id": "ckpt-latest-eval",
+            "benchmark_manifests": [],
+            "promotion_threshold": 0.2,
+        },
+        resume_token="continuous:exp-latest-eval:coding-default:eval:retry",
+    )
+    latest_eval_job = queue.list_jobs()[-1]
+    queue.update_job(
+        latest_eval_job.job_id,
+        status="completed",
+        result={
+            "advisor_profile_id": "coding-default",
+            "candidate_checkpoint_id": "ckpt-latest-eval",
+            "promotion_threshold": 0.2,
+            "candidate_summary": {"overall_score": 0.77, "focus_target_recall": 0.7},
+            "baseline_summary": {"overall_score": 0.5, "focus_target_recall": 0.5},
+            "deltas": {"overall_score": 0.27, "focus_target_recall": 0.2},
+            "promote": True,
+            "rollback": False,
+            "decision_reason": "latest eval should win",
+        },
+    )
+
+    report = build_phase5_measurement_report(
+        lifecycle_manager=manager,
+        job_records=queue.list_jobs(),
+    )
+
+    trend = report["profiles"]["coding-default"]["trend_history"][0]
+
+    assert trend["eval_job_id"] == latest_eval_job.job_id
+    assert trend["promotion_threshold"] == 0.2
+    assert trend["eval_delta"]["overall_score"] == 0.27
+    assert trend["promote_decision"] is True
