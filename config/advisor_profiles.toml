@@ -5,6 +5,15 @@ domain = "coding"
 description = "Default coding advisor profile"
 reward_spec_id = "coding_swe_efficiency"
 
+[profiles.coding-default.training]
+backend = "grpo"
+rollout_group_size = 4
+num_generations = 8
+max_steps = 12
+max_prompt_tokens = 4096
+max_completion_tokens = 1024
+checkpoint_root = "checkpoints/coding-default"
+
 [profiles.image-ui]
 domain = "image-ui"
 description = "UI and image advisor profile"

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .profiles import AdvisorProfileRegistry
+from .training_backends import GRPOTrainingBackend
 from .training_rollouts import TrainingRolloutGroupResult
 
 
@@ -15,6 +17,11 @@ class TrainingJobConfig(BaseModel):
     dataset_manifest: dict = Field(default_factory=dict)
     benchmark_manifests: list[dict] = Field(default_factory=list)
     output_dir: str
+    advisor_profile_id: str | None = None
+    backend_name: str | None = None
+    rollout_group_id: str | None = None
+    rollout_group_path: str | None = None
+    backend_artifact_paths: dict[str, str] = Field(default_factory=dict)
 
 
 class TrainingJobResult(BaseModel):
@@ -24,6 +31,10 @@ class TrainingJobResult(BaseModel):
     manifest_path: str
     artifact_dir: str
     training_metrics: dict = Field(default_factory=dict)
+    advisor_profile_id: str | None = None
+    backend_name: str | None = None
+    rollout_group_id: str | None = None
+    backend_artifact_paths: dict[str, str] = Field(default_factory=dict)
 
 
 class TrainingCheckpointRecord(BaseModel):
@@ -33,6 +44,7 @@ class TrainingCheckpointRecord(BaseModel):
     status: str
     benchmark_summary: dict = Field(default_factory=dict)
     rollback_reason: str | None = None
+    advisor_profile_id: str | None = None
 
 
 class CheckpointLifecycleManager:
@@ -91,6 +103,11 @@ class CheckpointLifecycleManager:
             "benchmark_manifests": config.benchmark_manifests,
             "training_metrics": result.training_metrics,
             "checkpoint_id": result.checkpoint_id,
+            "advisor_profile_id": config.advisor_profile_id,
+            "backend_name": config.backend_name,
+            "rollout_group_id": config.rollout_group_id,
+            "rollout_group_path": config.rollout_group_path,
+            "backend_artifact_paths": config.backend_artifact_paths,
             "created_at": datetime.now(UTC).isoformat(),
         }
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -125,6 +142,91 @@ class CheckpointLifecycleManager:
 
     def _write_registry(self, registry: list[dict]) -> None:
         self.registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def run_profile_training_job(
+    *,
+    job_id: str,
+    experiment_id: str,
+    advisor_profile_id: str,
+    rollout_group: TrainingRolloutGroupResult,
+    profile_registry: AdvisorProfileRegistry,
+    lifecycle_manager: CheckpointLifecycleManager,
+    backend: GRPOTrainingBackend | None = None,
+) -> TrainingJobResult:
+    profile = profile_registry.resolve(advisor_profile_id)
+    training_config = profile.training
+    if training_config is None:
+        raise ValueError(f"advisor profile {advisor_profile_id} is missing training config")
+
+    rollout_group_path = lifecycle_manager.record_rollout_group(rollout_group, job_id=job_id)
+    selected_backend = backend or GRPOTrainingBackend()
+    backend_result = selected_backend.run(
+        request=selected_backend_request(
+            job_id=job_id,
+            experiment_id=experiment_id,
+            advisor_profile_id=advisor_profile_id,
+            training_config=training_config,
+            rollout_group=rollout_group,
+            output_dir=str(lifecycle_manager.artifacts_root),
+        )
+    )
+    lifecycle_manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id=backend_result.checkpoint_id,
+            experiment_id=experiment_id,
+            path=backend_result.checkpoint_path,
+            status="candidate",
+            benchmark_summary={},
+            advisor_profile_id=advisor_profile_id,
+        )
+    )
+    config = TrainingJobConfig(
+        experiment_id=experiment_id,
+        training_mode=selected_backend.backend_name,
+        dataset_manifest={},
+        benchmark_manifests=[],
+        output_dir=str(lifecycle_manager.artifacts_root),
+        advisor_profile_id=advisor_profile_id,
+        backend_name=backend_result.backend_name,
+        rollout_group_id=rollout_group.group_id,
+        rollout_group_path=rollout_group_path,
+        backend_artifact_paths=backend_result.artifact_paths,
+    )
+    result = TrainingJobResult(
+        job_id=job_id,
+        experiment_id=experiment_id,
+        checkpoint_id=backend_result.checkpoint_id,
+        manifest_path="",
+        artifact_dir="",
+        training_metrics=backend_result.training_metrics,
+        advisor_profile_id=advisor_profile_id,
+        backend_name=backend_result.backend_name,
+        rollout_group_id=rollout_group.group_id,
+        backend_artifact_paths=backend_result.artifact_paths,
+    )
+    return lifecycle_manager.record_training_job(result, config=config)
+
+
+def selected_backend_request(
+    *,
+    job_id: str,
+    experiment_id: str,
+    advisor_profile_id: str,
+    training_config,
+    rollout_group: TrainingRolloutGroupResult,
+    output_dir: str,
+):
+    from .training_backends import TrainingBackendRunRequest
+
+    return TrainingBackendRunRequest(
+        job_id=job_id,
+        experiment_id=experiment_id,
+        advisor_profile_id=advisor_profile_id,
+        training_config=training_config,
+        rollout_group=rollout_group,
+        output_dir=output_dir,
+    )
 
 
 def evaluate_trained_checkpoint(
