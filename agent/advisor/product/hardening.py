@@ -248,10 +248,10 @@ def _check_metric(actual: float, threshold: float) -> dict:
 def _build_phase8_job_summary(jobs: list[dict]) -> dict:
     counts = {
         "total": len(jobs),
+        "queued": 0,
+        "running": 0,
         "completed": 0,
         "failed": 0,
-        "pending": 0,
-        "running": 0,
     }
     for job in jobs:
         status = job.get("status")
@@ -287,7 +287,16 @@ def _build_phase8_profile_report(profile_id: str, measurement_profile: dict | No
 
     trend_history = list(measurement_profile.get("trend_history") or [])
     summary = dict(measurement_profile.get("summary") or {})
-    rollback_cycle_count = sum(1 for item in trend_history if item.get("rollback") is True)
+    checkpoint_history = list(measurement_profile.get("checkpoint_history") or [])
+    rollback_checkpoint_ids = {
+        item.get("checkpoint_id")
+        for item in checkpoint_history
+        if item.get("checkpoint_id") and (item.get("status") == "rolled_back" or item.get("rollback_reason"))
+    }
+    rollback_checkpoint_ids.update(
+        item.get("checkpoint_id") for item in trend_history if item.get("checkpoint_id") and item.get("rollback") is True
+    )
+    rollback_cycle_count = len(rollback_checkpoint_ids)
     summary["rollback_cycle_count"] = rollback_cycle_count
     checks = {
         "completed_cycles": _check_count(int(summary.get("cycle_count") or 0), policy.min_completed_cycles),
@@ -298,7 +307,7 @@ def _build_phase8_profile_report(profile_id: str, measurement_profile: dict | No
     }
     return {
         "summary": summary,
-        "checkpoint_history": list(measurement_profile.get("checkpoint_history") or []),
+        "checkpoint_history": checkpoint_history,
         "trend_history": trend_history,
         "checks": checks,
     }

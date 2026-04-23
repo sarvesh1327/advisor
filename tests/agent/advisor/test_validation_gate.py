@@ -258,3 +258,76 @@ def test_build_phase8_validation_report_fails_without_rollback_evidence_and_with
     coding = report["profiles"]["coding-default"]
     assert coding["checks"]["rollback_coverage"]["pass"] is False
     assert report["job_summary"]["failed"] == 1
+
+
+def test_build_phase8_validation_report_counts_queued_jobs_in_job_summary(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+
+    queue.enqueue_job(
+        job_type="eval-profile",
+        payload={
+            "advisor_profile_id": "coding-default",
+            "candidate_checkpoint_id": "ckpt-queued",
+            "benchmark_manifests": [],
+            "promotion_threshold": 0.05,
+        },
+        resume_token="continuous:exp-queued:coding-default:eval:ckpt-queued",
+    )
+
+    report = build_phase8_validation_report(
+        lifecycle_manager=manager,
+        job_records=queue.list_jobs(),
+        required_profiles=[],
+        policy=Phase8ValidationPolicy(require_active_checkpoint=False, require_rollback_coverage=False),
+    )
+
+    assert report["job_summary"]["total"] == 1
+    assert report["job_summary"]["queued"] == 1
+
+
+
+def test_build_phase8_validation_report_counts_lineage_rollbacks_without_trend_history_evidence(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+
+    _write_checkpoint(
+        manager,
+        profile_id="coding-default",
+        checkpoint_id="ckpt-rollback",
+        experiment_id="exp-a",
+        status="rolled_back",
+        artifact_bytes=b"adapter-a",
+        benchmark_summary={"overall_score": 0.47},
+        rollback_reason="manual rollback",
+    )
+    _write_checkpoint(
+        manager,
+        profile_id="coding-default",
+        checkpoint_id="ckpt-active",
+        experiment_id="exp-b",
+        status="active",
+        artifact_bytes=b"adapter-b",
+        benchmark_summary={"overall_score": 0.74},
+    )
+    _enqueue_cycle_jobs(
+        queue,
+        experiment_id="exp-b",
+        profile_id="coding-default",
+        checkpoint_id="ckpt-active",
+        overall_delta=0.19,
+        recall_delta=0.12,
+        promote=True,
+        rollback=False,
+    )
+
+    report = build_phase8_validation_report(
+        lifecycle_manager=manager,
+        job_records=queue.list_jobs(),
+        required_profiles=["coding-default"],
+        policy=Phase8ValidationPolicy(min_completed_cycles=1, min_promoted_cycles=1, min_best_overall_delta=0.05),
+    )
+
+    coding = report["profiles"]["coding-default"]
+    assert coding["summary"]["rollback_cycle_count"] == 1
+    assert coding["checks"]["rollback_coverage"]["pass"] is True
