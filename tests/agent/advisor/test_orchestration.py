@@ -240,6 +240,36 @@ def test_orchestrator_passes_profile_id_to_profile_aware_runtime(tmp_path):
 
 
 
+def test_orchestrator_allows_explicit_profile_override_per_run(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    runtime = ProfileAwareRuntime(
+        [AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.91)]
+    )
+    orchestrator = AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=store,
+        executor=FrontierChatExecutor(
+            name="frontier-chat",
+            execute_fn=lambda request: ExecutorRunResult(status="success", summary="done", output="done"),
+        ),
+        verifiers=[],
+        router=DeterministicABRouter(advisor_fraction=1.0),
+        settings=AdvisorSettings(advisor_profile_id="coding-default"),
+    )
+
+    result = orchestrator.run(_packet("run-profile-override"), advisor_profile_id="text-ui")
+    persisted_run = store.get_run(result.run_id)
+    persisted_lineage = store.get_lineage(result.run_id)
+
+    assert runtime.calls[0]["advisor_profile_id"] == "text-ui"
+    assert result.lineage.reward_label.advisor_profile_id == "text-ui"
+    assert persisted_run is not None
+    assert persisted_run["advisor_profile_id"] == "text-ui"
+    assert persisted_lineage is not None
+    assert persisted_lineage["lineage"]["reward_label"]["advisor_profile_id"] == "text-ui"
+
+
+
 def test_orchestrator_review_path_preserves_profile_id_for_profile_aware_runtime(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     runtime = ProfileAwareRuntime(
@@ -264,3 +294,31 @@ def test_orchestrator_review_path_preserves_profile_id_for_profile_aware_runtime
     orchestrator.run(_packet("run-profile-review"))
 
     assert [call["advisor_profile_id"] for call in runtime.calls] == ["image-ui", "image-ui"]
+
+
+
+def test_orchestrator_review_path_preserves_explicit_profile_override(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    runtime = ProfileAwareRuntime(
+        [
+            AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.82),
+            AdviceBlock(task_type="review", recommended_plan=["double-check reward capture"], confidence=0.73),
+        ]
+    )
+    orchestrator = AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=store,
+        executor=FrontierChatExecutor(
+            name="frontier-chat",
+            execute_fn=lambda request: ExecutorRunResult(status="partial", summary="draft", output="draft"),
+        ),
+        verifiers=[],
+        router=DeterministicABRouter(advisor_fraction=1.0),
+        enable_second_pass_review=True,
+        settings=AdvisorSettings(advisor_profile_id="coding-default"),
+    )
+
+    result = orchestrator.run(_packet("run-profile-review-override"), advisor_profile_id="researcher")
+
+    assert [call["advisor_profile_id"] for call in runtime.calls] == ["researcher", "researcher"]
+    assert result.lineage.reward_label.advisor_profile_id == "researcher"

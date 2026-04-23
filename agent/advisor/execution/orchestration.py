@@ -236,13 +236,19 @@ class AdvisorOrchestrator:
             },
         )
 
-    def run(self, packet: AdvisorInputPacket, *, system_prompt: str | None = None) -> LiveRunResult:
+    def run(
+        self,
+        packet: AdvisorInputPacket,
+        *,
+        system_prompt: str | None = None,
+        advisor_profile_id: str | None = None,
+    ) -> LiveRunResult:
         self.event_logger.log("run.started", run_id=packet.run_id, stage="advisor", payload={"task_type": packet.task_type})
-        profile = self.profile_registry.resolve(self.settings.advisor_profile_id)
+        resolved_profile = self.profile_registry.resolve(advisor_profile_id or self.settings.advisor_profile_id)
         primary_advice, latency_ms = self._generate_advice(
             packet,
             system_prompt=system_prompt,
-            advisor_profile_id=profile.profile_id,
+            advisor_profile_id=resolved_profile.profile_id,
         )
         routing_decision = self.router.choose(packet)
         self.event_logger.log(
@@ -257,7 +263,7 @@ class AdvisorOrchestrator:
             packet,
             primary_advice,
             advisor_model=self.settings.model_version,
-            advisor_profile_id=self.settings.advisor_profile_id,
+            advisor_profile_id=resolved_profile.profile_id,
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
             validated=True,
@@ -278,7 +284,12 @@ class AdvisorOrchestrator:
             stage="executor",
             payload={"status": executor_result.status, "files_touched": executor_result.files_touched},
         )
-        review_advice = self._review_executor_output(packet, executor_result, system_prompt=system_prompt)
+        review_advice = self._review_executor_output(
+            packet,
+            executor_result,
+            system_prompt=system_prompt,
+            advisor_profile_id=resolved_profile.profile_id,
+        )
         verifier_results = [
             VerifierRunRecord(descriptor=verifier.descriptor, result=verifier.verify(executor_request, executor_result))
             for verifier in self.verifiers
@@ -298,9 +309,8 @@ class AdvisorOrchestrator:
             for item in record.result.constraint_violations
             if item
         ]
-        profile = self.profile_registry.resolve(self.settings.advisor_profile_id)
         reward_label = self.reward_registry.compute_reward_for_profile(
-            profile,
+            resolved_profile,
             packet,
             primary_advice,
             outcome,
@@ -367,6 +377,7 @@ class AdvisorOrchestrator:
         executor_result: ExecutorRunResult,
         *,
         system_prompt: str | None,
+        advisor_profile_id: str,
     ) -> AdviceBlock | None:
         if not self.enable_second_pass_review:
             return None
@@ -399,7 +410,7 @@ class AdvisorOrchestrator:
         review_advice, _ = self._generate_advice(
             review_packet,
             system_prompt=system_prompt,
-            advisor_profile_id=self.settings.advisor_profile_id,
+            advisor_profile_id=advisor_profile_id,
         )
         return review_advice
 
