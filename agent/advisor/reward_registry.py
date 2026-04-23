@@ -119,7 +119,7 @@ class RewardRegistry:
             resolved = outcome.status == "success" and executor_status == "success"
             return compute_coding_swe_efficiency_reward(
                 resolved=resolved,
-                steps=int(executor_metadata.get("steps") or max(outcome.retries + 1, 1)),
+                steps=_safe_step_count(executor_metadata.get("steps"), fallback=max(outcome.retries + 1, 1)),
             )
         if spec.formula_name == "coding_exact_answer":
             exact_correct = bool(verifier_metadata.get("exact_correct") or verifier_metadata.get("exact_match"))
@@ -133,8 +133,12 @@ class RewardRegistry:
         if spec.formula_name == "ui_edit_from_screenshot":
             return compute_ui_edit_from_screenshot_reward(
                 render_valid=bool(executor_metadata.get("render_valid", executor_status != "failure")),
-                screenshot_similarity=float(verifier_metadata.get("screenshot_similarity") or 0.0),
-                constraint_pass_rate=float(verifier_metadata.get("constraint_pass_rate") or verifier_metadata.get("hard_constraint_pass_rate") or 0.0),
+                screenshot_similarity=_metadata_float(verifier_metadata, "screenshot_similarity"),
+                constraint_pass_rate=_metadata_float(
+                    verifier_metadata,
+                    "constraint_pass_rate",
+                    fallback_keys=("hard_constraint_pass_rate",),
+                ),
             )
         if spec.formula_name == "research_writing_match":
             return compute_research_writing_match_reward(
@@ -155,6 +159,26 @@ def _merge_verifier_metadata(verifier_results: list[dict[str, Any]]) -> dict[str
             metadata = record.get("metadata") or {}
         merged.update(metadata)
     return merged
+
+
+def _metadata_float(metadata: dict[str, Any], primary_key: str, *, fallback_keys: tuple[str, ...] = ()) -> float:
+    for key in (primary_key, *fallback_keys):
+        if key not in metadata or metadata[key] is None:
+            continue
+        try:
+            return float(metadata[key])
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _safe_step_count(raw_steps: Any, *, fallback: int) -> int:
+    if raw_steps is None:
+        return fallback
+    try:
+        return int(raw_steps)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _default_reward_spec_for_profile(profile_id: str) -> str:
