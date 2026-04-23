@@ -1,90 +1,152 @@
-import json
-
-from agent.advisor.core.settings import AdvisorSettings
-from agent.advisor.product.hardening import (
-    BenchmarkReleasePolicy,
-    build_alert_summary,
-    build_deployment_hardening_profile,
-    evaluate_release_gate,
-    export_product_bundle,
-    import_product_bundle,
-    lock_truth_surface_contract,
+from agent.advisor.operators.operator_runtime import (
+    OperatorJobQueue,
+    PromoteCheckpointJobPayload,
+    run_continuous_training_cycle,
+    run_operator_job,
 )
+from agent.advisor.training.hardening import build_phase6_hardening_report
 
 
-def _results_report(*, lift: float = 0.12, reward_coverage: float = 1.0, lineage_coverage: float = 1.0, open_divergences: int = 1):
-    divergences = [
-        {"area": f"area-{idx}", "status": "open", "detail": "still open"}
-        for idx in range(open_divergences)
-    ]
+def _rollout_result(
+    *,
+    rollout_id: str,
+    profile_id: str = "coding-default",
+    packet_run_id: str = "run-1",
+    plan: list[str] | None = None,
+    total_reward: float = 0.8,
+):
     return {
-        "canonical_study": {
-            "lift_summary": {
-                "advisor_minus_baseline_overall_score": lift,
-            }
+        "rollout_id": rollout_id,
+        "advisor_profile_id": profile_id,
+        "packet": {
+            "run_id": packet_run_id,
+            "task_text": "repair main flow",
+            "task_type": "bugfix",
+            "repo": {"path": "/tmp/repo", "branch": "main", "dirty": False, "session_id": f"sess-{packet_run_id}"},
+            "repo_summary": {"modules": ["app"], "hotspots": ["main.py"], "file_tree_slice": ["main.py"]},
+            "candidate_files": [{"path": "main.py", "reason": "token overlap", "score": 0.9}],
+            "recent_failures": [],
+            "constraints": ["tests must pass"],
+            "tool_limits": {"terminal": True},
+            "acceptance_criteria": ["repair succeeds"],
+            "token_budget": 900,
         },
-        "provenance_coverage": {
-            "reward_label_coverage": reward_coverage,
-            "lineage_coverage": lineage_coverage,
+        "primary_advice": {
+            "task_type": "bugfix",
+            "focus_targets": [{"locator": "main.py", "why": "entrypoint", "priority": 1}],
+            "recommended_plan": plan or ["inspect main.py"],
+            "confidence": 0.9,
         },
-        "paper_divergences": divergences,
+        "executor_result": {"status": "success", "summary": "patched main.py", "output": "patched main.py"},
+        "verifier_results": [],
+        "outcome": {"run_id": packet_run_id, "status": "success", "retries": 0, "tests_run": ["pytest -q"]},
+        "reward_label": {"total_reward": total_reward, "quality_score": total_reward},
+        "diagnostics": {"multi_turn": False},
+        "multi_turn_transcript": [],
     }
 
 
-def test_release_gate_enforces_regression_thresholds_and_alerts():
-    passing = evaluate_release_gate(_results_report(), BenchmarkReleasePolicy())
-    failing = evaluate_release_gate(
-        _results_report(lift=-0.02, reward_coverage=0.6, lineage_coverage=0.7, open_divergences=3),
-        BenchmarkReleasePolicy(min_overall_lift=0.0, min_reward_label_coverage=0.9, min_lineage_coverage=0.9, max_open_divergences=1),
+
+def test_build_phase6_hardening_report_flags_duplicate_leakage_reward_mismatch_and_flat_rewards():
+    rollout_group = {
+        "group_id": "group-hardening",
+        "advisor_profile_id": "coding-default",
+        "results": [
+            _rollout_result(rollout_id="rollout-1", packet_run_id="run-1", total_reward=0.8),
+            _rollout_result(rollout_id="rollout-2", packet_run_id="run-2", total_reward=0.8),
+        ],
+        "reward_values": [0.8, 0.6],
+        "summary": {},
+    }
+
+    report = build_phase6_hardening_report(rollout_group=rollout_group, advisor_profile_id="coding-default")
+    issue_codes = {issue["code"] for issue in report["issues"]}
+
+    assert report["blocking"] is True
+    assert report["summary"]["rollout_count"] == 2
+    assert report["summary"]["duplicate_signature_count"] == 1
+    assert report["summary"]["distinct_reward_count"] == 1
+    assert {"duplicate_training_signature", "reward_value_mismatch", "flat_reward_distribution"} <= issue_codes
+
+
+
+def test_run_continuous_training_cycle_rejects_blocking_hardening_issues_before_training():
+    queue = OperatorJobQueue("/tmp/phase6-hardening-cycle-jobs.json")
+    bad_rollout_group = {
+        "group_id": "group-bad-cycle",
+        "advisor_profile_id": "coding-default",
+        "results": [
+            _rollout_result(rollout_id="rollout-1", packet_run_id="run-1", total_reward=0.7),
+            _rollout_result(rollout_id="rollout-2", packet_run_id="run-2", total_reward=0.7),
+        ],
+        "reward_values": [0.7, 0.7],
+        "summary": {},
+    }
+
+    try:
+        run_continuous_training_cycle(
+            queue,
+            experiment_id="exp-phase6",
+            advisor_profile_id="coding-default",
+            rollout_group=bad_rollout_group,
+            benchmark_manifests=[],
+            train_profile_fn=lambda payload: (_ for _ in ()).throw(RuntimeError("train should not run")),
+        )
+    except ValueError as exc:
+        assert "blocking rollout hardening issues" in str(exc)
+    else:
+        raise AssertionError("expected blocking rollout hardening issues to stop the cycle")
+
+    assert queue.list_jobs() == []
+
+
+
+def test_run_operator_job_blocks_promotion_when_eval_evidence_is_regressive_or_malformed(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    missing_deltas_job = queue.enqueue_job(
+        job_type="promote-checkpoint",
+        payload=PromoteCheckpointJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-missing-deltas",
+            evaluation={
+                "advisor_profile_id": "coding-default",
+                "candidate_checkpoint_id": "ckpt-missing-deltas",
+                "promote": True,
+                "decision_reason": "missing deltas should block",
+            },
+        ).model_dump(),
+        resume_token="promote-missing-deltas",
     )
-    alerts = build_alert_summary(failing)
+    blocked_missing_deltas = run_operator_job(
+        queue,
+        missing_deltas_job.job_id,
+        promote_checkpoint_fn=lambda payload: {"promoted": True},
+    )
 
-    assert passing["pass"] is True
-    assert failing["pass"] is False
-    assert failing["checks"]["overall_lift"]["pass"] is False
-    assert failing["checks"]["reward_label_coverage"]["pass"] is False
-    assert alerts["severity"] == "critical"
-    assert "release gate failed" in alerts["summary"].lower()
+    promote_job = queue.enqueue_job(
+        job_type="promote-checkpoint",
+        payload=PromoteCheckpointJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-bad",
+            evaluation={
+                "advisor_profile_id": "coding-default",
+                "candidate_checkpoint_id": "ckpt-bad",
+                "promote": True,
+                "rollback": True,
+                "deltas": {"overall_score": -0.1, "focus_target_recall": -0.2},
+                "decision_reason": "regression detected",
+            },
+        ).model_dump(),
+        resume_token="promote-bad",
+    )
 
+    result = run_operator_job(queue, promote_job.job_id, promote_checkpoint_fn=lambda payload: {"promoted": True})
 
-def test_build_deployment_hardening_profile_sets_hosted_auth_and_isolation_requirements(tmp_path):
-    single_tenant = build_deployment_hardening_profile(mode="single_tenant", state_root=tmp_path / "single")
-    hosted = build_deployment_hardening_profile(mode="hosted", state_root=tmp_path / "hosted")
-
-    assert single_tenant.auth["mode"] == "local-boundary"
-    assert hosted.auth["mode"] == "external-auth-proxy"
-    assert hosted.tenancy["tenant_id_required"] is True
-    assert hosted.isolation["storage_strategy"] == "per-tenant-root"
-    assert len(hosted.operator_runbooks) >= 3
-
-
-def test_export_and_import_product_bundle_preserve_state_and_contract_manifest(tmp_path):
-    state_root = tmp_path / "state"
-    state_root.mkdir()
-    trace_db = state_root / "advisor.db"
-    event_log = state_root / "events.jsonl"
-    archive_dir = state_root / "archive"
-    archive_dir.mkdir()
-    (archive_dir / "runs.jsonl").write_text('{"run_id":"run-1"}\n', encoding="utf-8")
-    trace_db.write_text("sqlite-placeholder", encoding="utf-8")
-    event_log.write_text('{"event":"ok"}\n', encoding="utf-8")
-    settings = AdvisorSettings(trace_db_path=str(trace_db), event_log_path=str(event_log))
-
-    bundle_path = export_product_bundle(output_dir=tmp_path / "bundle", settings=settings)
-    imported_root = import_product_bundle(bundle_path=bundle_path, target_root=tmp_path / "restored")
-    contract = json.loads((tmp_path / "bundle" / "truth-surface-contract.json").read_text(encoding="utf-8"))
-
-    assert (tmp_path / "bundle" / "state" / "advisor.db").exists()
-    assert (imported_root / "state" / "advisor.db").read_text(encoding="utf-8") == "sqlite-placeholder"
-    assert contract["benchmark_contract"]["version"] == "v1"
-    assert contract["reward_contract"]["version"] == "v1"
-
-
-def test_lock_truth_surface_contract_writes_versioned_manifest(tmp_path):
-    contract_path = lock_truth_surface_contract(tmp_path / "contract.json")
-    contract = json.loads((tmp_path / "contract.json").read_text(encoding="utf-8"))
-
-    assert contract_path == str(tmp_path / "contract.json")
-    assert contract["packet_schema"]["version"] == "v1"
-    assert contract["advice_schema"]["version"] == "v1"
-    assert contract["experiment_report_contract"]["version"] == "v1"
+    assert blocked_missing_deltas.status == "completed"
+    assert blocked_missing_deltas.result["status"] == "blocked"
+    assert blocked_missing_deltas.result["promoted"] is False
+    assert "missing or non-finite" in blocked_missing_deltas.result["reason"]
+    assert result.status == "completed"
+    assert result.result["status"] == "blocked"
+    assert result.result["promoted"] is False
+    assert "regression detected" in result.result["reason"]
