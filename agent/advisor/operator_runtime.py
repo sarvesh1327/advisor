@@ -4,14 +4,23 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from .benchmark import BenchmarkRunManifest, compare_benchmark_arms
 from .observability import export_live_metrics
+from .profiles import AdvisorProfileRegistry
 from .settings import AdvisorSettings
 from .trace_store import AdvisorTraceStore
+from .training_rollouts import TrainingRolloutGroupResult
+from .training_runtime import (
+    CheckpointLifecycleManager,
+    evaluate_profile_checkpoint_for_promotion,
+    run_profile_training_job,
+)
+
+SUPPORTED_OPERATOR_JOB_TYPES = {"train-profile", "eval-profile", "promote-checkpoint"}
 
 
 class DeploymentProfile(BaseModel):
@@ -42,6 +51,26 @@ class OperatorJobRequest(BaseModel):
     resume_token: str | None = None
 
 
+class TrainProfileJobPayload(BaseModel):
+    experiment_id: str
+    advisor_profile_id: str
+    rollout_group: dict
+    benchmark_manifests: list[dict] = Field(default_factory=list)
+
+
+class EvalProfileJobPayload(BaseModel):
+    advisor_profile_id: str
+    candidate_checkpoint_id: str
+    benchmark_manifests: list[dict] = Field(default_factory=list)
+    promotion_threshold: float = 0.05
+
+
+class PromoteCheckpointJobPayload(BaseModel):
+    advisor_profile_id: str
+    candidate_checkpoint_id: str
+    evaluation: dict = Field(default_factory=dict)
+
+
 class OperatorJobQueue:
     def __init__(self, state_path: str | Path):
         self.state_path = Path(state_path).expanduser()
@@ -55,12 +84,13 @@ class OperatorJobQueue:
         job_id: str | None = None,
         resume_token: str | None = None,
     ) -> OperatorJobRecord:
+        validated_payload = _validate_operator_job_payload(job_type, payload)
         now = _utc_now().isoformat()
         record = OperatorJobRecord(
             job_id=job_id or f"job_{uuid.uuid4().hex[:12]}",
             job_type=job_type,
             status="queued",
-            payload=payload,
+            payload=validated_payload.model_dump(),
             resume_token=resume_token,
             created_at=now,
             updated_at=now,
@@ -283,6 +313,180 @@ def build_operator_snapshot(
             "archive_root": str(Path(settings.trace_db_path).expanduser().parent / "archive"),
         },
     }
+
+
+def run_operator_job(
+    queue: OperatorJobQueue,
+    job_id: str,
+    *,
+    settings: AdvisorSettings | None = None,
+    profile_registry: AdvisorProfileRegistry | None = None,
+    lifecycle_manager: CheckpointLifecycleManager | None = None,
+    train_profile_fn: Any | None = None,
+    eval_profile_fn: Any | None = None,
+    promote_checkpoint_fn: Any | None = None,
+) -> OperatorJobRecord:
+    existing = _get_job(queue, job_id)
+    if existing.status == "completed":
+        return existing
+
+    queue.update_job(job_id, status="running")
+    active = _get_job(queue, job_id)
+    payload = _validate_operator_job_payload(active.job_type, active.payload)
+
+    try:
+        if active.job_type == "train-profile":
+            result = _run_train_profile_job(
+                job_id=job_id,
+                payload=payload,
+                settings=settings,
+                profile_registry=profile_registry,
+                lifecycle_manager=lifecycle_manager,
+                train_profile_fn=train_profile_fn,
+            )
+        elif active.job_type == "eval-profile":
+            result = _run_eval_profile_job(
+                payload=payload,
+                settings=settings,
+                lifecycle_manager=lifecycle_manager,
+                eval_profile_fn=eval_profile_fn,
+            )
+        elif active.job_type == "promote-checkpoint":
+            result = _run_promote_checkpoint_job(
+                payload=payload,
+                settings=settings,
+                lifecycle_manager=lifecycle_manager,
+                promote_checkpoint_fn=promote_checkpoint_fn,
+            )
+        else:
+            raise ValueError(f"unsupported job_type: {active.job_type}")
+    except Exception as exc:
+        queue.update_job(job_id, status="failed", last_error=str(exc))
+        raise
+
+    normalized_result = _normalize_result(result)
+    return queue.update_job(job_id, status="completed", result=normalized_result)
+
+
+def _run_train_profile_job(
+    *,
+    job_id: str,
+    payload: TrainProfileJobPayload,
+    settings: AdvisorSettings | None,
+    profile_registry: AdvisorProfileRegistry | None,
+    lifecycle_manager: CheckpointLifecycleManager | None,
+    train_profile_fn: Any | None,
+) -> dict:
+    if train_profile_fn is not None:
+        return _normalize_result(train_profile_fn(payload))
+
+    if settings is None:
+        raise ValueError("settings are required to execute train-profile jobs")
+    registry = profile_registry or AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path)
+    manager = lifecycle_manager or _build_lifecycle_manager(settings)
+    result = run_profile_training_job(
+        job_id=job_id,
+        experiment_id=payload.experiment_id,
+        advisor_profile_id=payload.advisor_profile_id,
+        rollout_group=TrainingRolloutGroupResult.model_validate(payload.rollout_group),
+        profile_registry=registry,
+        lifecycle_manager=manager,
+    )
+    return result.model_dump()
+
+
+def _run_eval_profile_job(
+    *,
+    payload: EvalProfileJobPayload,
+    settings: AdvisorSettings | None,
+    lifecycle_manager: CheckpointLifecycleManager | None,
+    eval_profile_fn: Any | None,
+) -> dict:
+    if eval_profile_fn is not None:
+        return _normalize_result(eval_profile_fn(payload))
+
+    if settings is None:
+        raise ValueError("settings are required to execute eval-profile jobs")
+    manager = lifecycle_manager or _build_lifecycle_manager(settings)
+    result = evaluate_profile_checkpoint_for_promotion(
+        advisor_profile_id=payload.advisor_profile_id,
+        candidate_checkpoint_id=payload.candidate_checkpoint_id,
+        benchmark_manifests=[BenchmarkRunManifest.model_validate(item) for item in payload.benchmark_manifests],
+        lifecycle_manager=manager,
+        promotion_threshold=payload.promotion_threshold,
+    )
+    return result.model_dump()
+
+
+def _run_promote_checkpoint_job(
+    *,
+    payload: PromoteCheckpointJobPayload,
+    settings: AdvisorSettings | None,
+    lifecycle_manager: CheckpointLifecycleManager | None,
+    promote_checkpoint_fn: Any | None,
+) -> dict:
+    evaluation = payload.evaluation or {}
+    if evaluation.get("advisor_profile_id") != payload.advisor_profile_id:
+        raise ValueError("promotion evaluation advisor_profile_id does not match payload")
+    if evaluation.get("candidate_checkpoint_id") != payload.candidate_checkpoint_id:
+        raise ValueError("promotion evaluation candidate_checkpoint_id does not match payload")
+    if evaluation.get("promote") is not True:
+        raise ValueError("promote-checkpoint requires prior passing evaluation evidence")
+
+    if promote_checkpoint_fn is not None:
+        return _normalize_result(promote_checkpoint_fn(payload))
+
+    if settings is None:
+        raise ValueError("settings are required to execute promote-checkpoint jobs")
+    manager = lifecycle_manager or _build_lifecycle_manager(settings)
+    existing = manager.get_checkpoint(payload.candidate_checkpoint_id)
+    if existing is None:
+        raise ValueError(f"unknown checkpoint_id: {payload.candidate_checkpoint_id}")
+    if existing.status == "active":
+        return {
+            "promoted": False,
+            "status": "noop",
+            "checkpoint_id": existing.checkpoint_id,
+            "advisor_profile_id": payload.advisor_profile_id,
+        }
+    promoted = manager.promote_checkpoint(payload.candidate_checkpoint_id)
+    return {
+        "promoted": True,
+        "status": promoted.status,
+        "checkpoint_id": promoted.checkpoint_id,
+        "advisor_profile_id": promoted.advisor_profile_id,
+    }
+
+
+def _validate_operator_job_payload(job_type: str, payload: dict | BaseModel) -> BaseModel:
+    if job_type not in SUPPORTED_OPERATOR_JOB_TYPES:
+        raise ValueError(f"unsupported job_type: {job_type}")
+    raw_payload = payload.model_dump() if isinstance(payload, BaseModel) else payload
+    model_map = {
+        "train-profile": TrainProfileJobPayload,
+        "eval-profile": EvalProfileJobPayload,
+        "promote-checkpoint": PromoteCheckpointJobPayload,
+    }
+    return model_map[job_type].model_validate(raw_payload)
+
+
+def _normalize_result(result: Any) -> dict:
+    if isinstance(result, BaseModel):
+        return result.model_dump()
+    if isinstance(result, dict):
+        return result
+    raise ValueError(f"operator job results must be dict-like, got {type(result).__name__}")
+
+
+def _build_lifecycle_manager(settings: AdvisorSettings) -> CheckpointLifecycleManager:
+    return CheckpointLifecycleManager(Path(settings.trace_db_path).expanduser().parent / "artifacts")
+
+
+def _get_job(queue: OperatorJobQueue, job_id: str) -> OperatorJobRecord:
+    for item in queue.list_jobs():
+        if item.job_id == job_id:
+            return item
+    raise ValueError(f"unknown job_id: {job_id}")
 
 
 def _is_stale(timestamp: str | None, cutoff: datetime) -> bool:

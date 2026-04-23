@@ -12,7 +12,13 @@ from .hardening import (
     export_product_bundle,
     import_product_bundle,
 )
-from .operator_runtime import OperatorJobQueue, RetentionEnforcer, build_deployment_profile, build_operator_snapshot
+from .operator_runtime import (
+    OperatorJobQueue,
+    RetentionEnforcer,
+    build_deployment_profile,
+    build_operator_snapshot,
+    run_operator_job,
+)
 from .settings import AdvisorSettings
 
 try:
@@ -47,6 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     operator_parser = subparsers.add_parser("operator-overview", help="Print operator overview JSON")
     operator_parser.set_defaults(handler=_handle_operator_overview)
+
+    operator_run_parser = subparsers.add_parser("operator-run-job", help="Run a queued operator job by id")
+    operator_run_parser.add_argument("--job-id", required=True, help="Queued operator job id")
+    operator_run_parser.set_defaults(handler=_handle_operator_run_job)
 
     retention_parser = subparsers.add_parser("retention-enforce", help="Archive and prune retained runs/events")
     retention_parser.set_defaults(handler=_handle_retention_enforce)
@@ -128,6 +138,20 @@ def _handle_operator_overview(args) -> int:
         job_records=queue.list_jobs(),
     )
     print(json.dumps(snapshot, ensure_ascii=False))
+    return 0
+
+
+def _handle_operator_run_job(args) -> int:
+    settings = AdvisorSettings.load()
+    gateway = create_gateway(settings=settings)
+    queue = OperatorJobQueue(Path(settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
+    record = run_operator_job(
+        queue,
+        args.job_id,
+        settings=settings,
+        profile_registry=gateway.profile_registry,
+    )
+    print(json.dumps(record.model_dump(), ensure_ascii=False))
     return 0
 
 

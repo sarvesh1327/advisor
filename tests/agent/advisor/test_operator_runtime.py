@@ -5,10 +5,14 @@ from datetime import UTC, datetime
 from agent.advisor.api import create_orchestrator
 from agent.advisor.benchmark import BenchmarkRunManifest
 from agent.advisor.operator_runtime import (
+    EvalProfileJobPayload,
     OperatorJobQueue,
+    PromoteCheckpointJobPayload,
     RetentionEnforcer,
+    TrainProfileJobPayload,
     build_deployment_profile,
     build_operator_snapshot,
+    run_operator_job,
 )
 from agent.advisor.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
 from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
@@ -122,7 +126,42 @@ def test_build_deployment_profile_and_snapshot_summarize_operator_state(tmp_path
 def test_operator_job_queue_persists_and_resumes_incomplete_jobs(tmp_path):
     queue = OperatorJobQueue(tmp_path / "jobs.json")
 
-    queued = queue.enqueue_job(job_type="benchmark", payload={"suite": "core"}, resume_token="suite-core")
+    queued = queue.enqueue_job(
+        job_type="eval-profile",
+        payload=EvalProfileJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-1",
+            benchmark_manifests=[
+                BenchmarkRunManifest(
+                    run_id="baseline-run",
+                    fixture_id="coding-main",
+                    domain="coding",
+                    split="validation",
+                    packet_hash="abc",
+                    executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+                    verifier_set=["build-check"],
+                    routing_arm="baseline",
+                    advisor_profile_id="coding-default",
+                    reward_version="phase8-v1",
+                    score={"overall_score": 0.5, "focus_target_recall": 0.5},
+                ).model_dump(),
+                BenchmarkRunManifest(
+                    run_id="advisor-run",
+                    fixture_id="coding-main",
+                    domain="coding",
+                    split="validation",
+                    packet_hash="abd",
+                    executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+                    verifier_set=["build-check"],
+                    routing_arm="advisor",
+                    advisor_profile_id="coding-default",
+                    reward_version="phase8-v1",
+                    score={"overall_score": 0.7, "focus_target_recall": 0.8},
+                ).model_dump(),
+            ],
+        ).model_dump(),
+        resume_token="suite-core",
+    )
     running = queue.update_job(queued.job_id, status="running")
     failed = queue.update_job(queued.job_id, status="failed", last_error="timeout")
     resumed = queue.resume_incomplete_jobs()
@@ -134,6 +173,171 @@ def test_operator_job_queue_persists_and_resumes_incomplete_jobs(tmp_path):
     assert [job.job_id for job in resumed] == [queued.job_id]
     assert persisted[0].status == "queued"
     assert persisted[0].resume_token == "suite-core"
+
+
+def test_operator_job_queue_rejects_unknown_job_types_and_invalid_payloads(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+
+    try:
+        queue.enqueue_job(job_type="unknown-job", payload={})
+    except ValueError as exc:
+        assert "unsupported job_type" in str(exc)
+    else:
+        raise AssertionError("expected unknown job type to raise ValueError")
+
+    try:
+        queue.enqueue_job(job_type="train-profile", payload={"advisor_profile_id": "coding-default"})
+    except ValueError as exc:
+        assert "experiment_id" in str(exc)
+    else:
+        raise AssertionError("expected invalid train-profile payload to raise ValueError")
+
+
+def test_run_operator_job_executes_train_and_eval_jobs_with_structured_results(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    train_job = queue.enqueue_job(
+        job_type="train-profile",
+        payload=TrainProfileJobPayload(
+            experiment_id="exp-14",
+            advisor_profile_id="coding-default",
+            rollout_group={
+                "group_id": "group-1",
+                "advisor_profile_id": "coding-default",
+                "results": [],
+                "reward_values": [],
+                "summary": {},
+            },
+        ).model_dump(),
+        resume_token="train-coding-default",
+    )
+    eval_job = queue.enqueue_job(
+        job_type="eval-profile",
+        payload=EvalProfileJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-1",
+            benchmark_manifests=[
+                BenchmarkRunManifest(
+                    run_id="baseline-run",
+                    fixture_id="coding-main",
+                    domain="coding",
+                    split="validation",
+                    packet_hash="hash-a",
+                    executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+                    verifier_set=["build-check"],
+                    routing_arm="baseline",
+                    advisor_profile_id="coding-default",
+                    reward_version="phase8-v1",
+                    score={"overall_score": 0.5, "focus_target_recall": 0.5},
+                ).model_dump(),
+                BenchmarkRunManifest(
+                    run_id="advisor-run",
+                    fixture_id="coding-main",
+                    domain="coding",
+                    split="validation",
+                    packet_hash="hash-b",
+                    executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+                    verifier_set=["build-check"],
+                    routing_arm="advisor",
+                    advisor_profile_id="coding-default",
+                    reward_version="phase8-v1",
+                    score={"overall_score": 0.8, "focus_target_recall": 0.8},
+                ).model_dump(),
+            ],
+            promotion_threshold=0.1,
+        ).model_dump(),
+    )
+
+    train_record = run_operator_job(
+        queue,
+        train_job.job_id,
+        train_profile_fn=lambda payload: {
+            "job_kind": "train-profile",
+            "advisor_profile_id": payload.advisor_profile_id,
+            "checkpoint_id": "ckpt-1",
+        },
+    )
+    eval_record = run_operator_job(
+        queue,
+        eval_job.job_id,
+        eval_profile_fn=lambda payload: {
+            "job_kind": "eval-profile",
+            "advisor_profile_id": payload.advisor_profile_id,
+            "candidate_checkpoint_id": payload.candidate_checkpoint_id,
+            "promote": True,
+        },
+    )
+
+    assert train_record.status == "completed"
+    assert train_record.result["checkpoint_id"] == "ckpt-1"
+    assert eval_record.status == "completed"
+    assert eval_record.result["promote"] is True
+
+
+def test_run_operator_job_records_failures_and_resume_support(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    job = queue.enqueue_job(
+        job_type="train-profile",
+        payload=TrainProfileJobPayload(
+            experiment_id="exp-14",
+            advisor_profile_id="coding-default",
+            rollout_group={
+                "group_id": "group-1",
+                "advisor_profile_id": "coding-default",
+                "results": [],
+                "reward_values": [],
+                "summary": {},
+            },
+        ).model_dump(),
+        resume_token="retry-train",
+    )
+
+    try:
+        run_operator_job(queue, job.job_id, train_profile_fn=lambda payload: (_ for _ in ()).throw(RuntimeError("boom")))
+    except RuntimeError as exc:
+        assert "boom" in str(exc)
+    else:
+        raise AssertionError("expected failing job execution to raise RuntimeError")
+
+    failed = queue.list_jobs()[0]
+    resumed = queue.resume_incomplete_jobs()
+
+    assert failed.status == "failed"
+    assert failed.last_error == "boom"
+    assert [item.job_id for item in resumed] == [job.job_id]
+    assert queue.list_jobs()[0].status == "queued"
+
+
+def test_run_operator_job_returns_completed_record_without_rerunning(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    job = queue.enqueue_job(
+        job_type="promote-checkpoint",
+        payload=PromoteCheckpointJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-1",
+            evaluation={
+                "advisor_profile_id": "coding-default",
+                "candidate_checkpoint_id": "ckpt-1",
+                "promote": True,
+            },
+        ).model_dump(),
+    )
+    calls = {"count": 0}
+
+    first = run_operator_job(
+        queue,
+        job.job_id,
+        promote_checkpoint_fn=lambda payload: calls.__setitem__("count", calls["count"] + 1) or {"promoted": True},
+    )
+    second = run_operator_job(
+        queue,
+        job.job_id,
+        promote_checkpoint_fn=lambda payload: (_ for _ in ()).throw(RuntimeError("should not rerun")),
+    )
+
+    assert first.status == "completed"
+    assert second.status == "completed"
+    assert second.result == first.result
+    assert calls["count"] == 1
 
 
 def test_retention_enforcer_archives_old_runs_and_rotates_event_logs(tmp_path):

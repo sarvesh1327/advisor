@@ -137,6 +137,7 @@ Core rule:
 - [x] Add run inspection / dashboard surface for lineage, rewards, failures, and benchmark summaries
 - [x] Add background jobs, queueing, and resumability for long runs
 - [x] Enforce retention / archival / rotation behavior operationally
+- [x] Add typed queued train/eval/promote operator jobs without bypassing benchmark-gated promotion
 
 ## Phase 16 — Paper-faithful results pass
 - [x] Run canonical baseline vs advisor-assisted studies on frozen suites

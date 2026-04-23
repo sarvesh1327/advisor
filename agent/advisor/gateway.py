@@ -15,6 +15,7 @@ from .operator_runtime import (
     RetentionEnforcer,
     build_deployment_profile,
     build_operator_snapshot,
+    run_operator_job,
 )
 from .profiles import AdvisorProfile, AdvisorProfileRegistry
 from .runtime_mlx import MLXAdvisorRuntime
@@ -228,6 +229,15 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             return resumed[0].model_dump()
         existing = [item for item in operator_queue.list_jobs() if item.job_id == job_id]
         return existing[0].model_dump() if existing else {"job_id": job_id, "status": "missing"}
+
+    @app.post("/v1/operator/jobs/{job_id}/run")
+    def operator_run_job(job_id: str):
+        return run_operator_job(
+            operator_queue,
+            job_id,
+            settings=active_settings,
+            profile_registry=gateway.profile_registry,
+        ).model_dump()
 
     @app.post("/v1/operator/retention/enforce")
     def operator_retention_enforce():
