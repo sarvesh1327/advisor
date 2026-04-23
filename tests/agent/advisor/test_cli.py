@@ -1,15 +1,15 @@
 import json
 
-from agent.advisor import cli
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorInputPacket,
     AdvisorTaskRunResult,
     CandidateFile,
     RepoSummary,
 )
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.product import cli
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 DEFAULT_PROFILE_ID = "coding-default"
 

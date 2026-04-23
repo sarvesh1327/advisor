@@ -4,9 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 
-from agent.advisor.metrics import summarize_runs
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.evaluation.metrics import summarize_runs
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def main() -> None:

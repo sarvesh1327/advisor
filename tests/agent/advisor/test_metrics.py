@@ -1,5 +1,4 @@
-from agent.advisor.metrics import summarize_runs
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorInputPacket,
     AdvisorOutcome,
@@ -7,7 +6,8 @@ from agent.advisor.schemas import (
     RelevantFile,
     RepoSummary,
 )
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.evaluation.metrics import summarize_runs
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def _packet(run_id: str):

@@ -1,5 +1,5 @@
-from agent.advisor.injector import render_advice_for_user_context
-from agent.advisor.schemas import AdviceBlock, FocusTarget
+from agent.advisor.core.injector import render_advice_for_user_context
+from agent.advisor.core.schemas import AdviceBlock, FocusTarget
 
 
 def test_render_advice_for_user_context_contains_sections():

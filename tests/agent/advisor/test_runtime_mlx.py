@@ -3,11 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.advisor import runtime_mlx
+from agent.advisor.core.schemas import AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.profiles import AdvisorProfileRegistry
-from agent.advisor.runtime_mlx import MLXAdvisorRuntime
-from agent.advisor.schemas import AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
+from agent.advisor.runtime import runtime_mlx
+from agent.advisor.runtime.runtime_mlx import MLXAdvisorRuntime
 
 
 class StubTokenizer:

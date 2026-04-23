@@ -1,10 +1,10 @@
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
 from agent.advisor.domain_rewards.coding import compute_coding_exact_answer_reward, compute_coding_swe_efficiency_reward
 from agent.advisor.domain_rewards.research import compute_research_writing_match_reward
 from agent.advisor.domain_rewards.ui import compute_ui_edit_from_screenshot_reward, compute_ui_from_text_layout_reward
 from agent.advisor.profiles import AdvisorProfile
-from agent.advisor.reward_registry import RewardRegistry
-from agent.advisor.reward_specs import RewardSpec
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
+from agent.advisor.rewards.reward_registry import RewardRegistry
+from agent.advisor.rewards.reward_specs import RewardSpec
 
 
 def _packet(run_id: str = "run-domain"):

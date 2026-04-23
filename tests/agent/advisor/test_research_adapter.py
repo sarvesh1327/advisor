@@ -1,5 +1,5 @@
-from agent.advisor.research_adapter import ResearchContextAdapter
-from agent.advisor.schemas import CandidateFile, FailureSignal
+from agent.advisor.adapters.research_adapter import ResearchContextAdapter
+from agent.advisor.core.schemas import CandidateFile, FailureSignal
 
 
 def test_research_adapter_builds_packet_from_sources_and_notes():

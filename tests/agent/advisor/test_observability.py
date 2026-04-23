@@ -1,15 +1,15 @@
-from agent.advisor.api import create_orchestrator
-from agent.advisor.observability import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.execution.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
+from agent.advisor.product.api import create_orchestrator
+from agent.advisor.storage.observability import (
     LiveMetricsSnapshot,
     RunEventLogger,
     build_audit_report,
     export_live_metrics,
     redact_packet,
 )
-from agent.advisor.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 class StubRuntime:

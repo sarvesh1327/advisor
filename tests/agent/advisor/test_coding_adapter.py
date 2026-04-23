@@ -1,5 +1,5 @@
-from agent.advisor.coding_adapter import CodingContextAdapter
-from agent.advisor.schemas import CandidateFile, FailureSignal
+from agent.advisor.adapters.coding_adapter import CodingContextAdapter
+from agent.advisor.core.schemas import CandidateFile, FailureSignal
 
 
 def test_coding_adapter_builds_packet_from_coding_inputs():

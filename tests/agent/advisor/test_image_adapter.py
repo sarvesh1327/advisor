@@ -1,5 +1,5 @@
-from agent.advisor.image_adapter import ImageUIContextAdapter
-from agent.advisor.schemas import CandidateFile, FailureSignal
+from agent.advisor.adapters.image_adapter import ImageUIContextAdapter
+from agent.advisor.core.schemas import CandidateFile, FailureSignal
 
 
 def test_image_adapter_builds_packet_from_ui_artifacts():

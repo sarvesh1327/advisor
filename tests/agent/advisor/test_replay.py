@@ -1,7 +1,7 @@
-from agent.advisor.eval_fixtures import EvalExpectation, EvalFixture, HumanReviewRubric
-from agent.advisor.replay import evaluate_replay_run, list_replay_runs
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, FocusTarget, RepoSummary
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, FocusTarget, RepoSummary
+from agent.advisor.evaluation.eval_fixtures import EvalExpectation, EvalFixture, HumanReviewRubric
+from agent.advisor.evaluation.replay import evaluate_replay_run, list_replay_runs
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def _packet(run_id: str = "run-1"):

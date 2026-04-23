@@ -1,5 +1,4 @@
-from agent.advisor.reward_model import compute_reward_label
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorArtifact,
     AdvisorCapabilityDescriptor,
@@ -12,7 +11,8 @@ from agent.advisor.schemas import (
     ExecutorInjectionPolicy,
     RepoSummary,
 )
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.rewards.reward_model import compute_reward_label
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 DEFAULT_PROFILE_ID = "coding-default"
 

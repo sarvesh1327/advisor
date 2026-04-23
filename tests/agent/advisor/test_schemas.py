@@ -1,5 +1,5 @@
 
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorArtifact,
     AdvisorCapabilityDescriptor,

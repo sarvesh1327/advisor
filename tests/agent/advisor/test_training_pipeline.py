@@ -1,7 +1,7 @@
-from agent.advisor.reward_model import compute_reward_label
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
-from agent.advisor.trace_store import AdvisorTraceStore
-from agent.advisor.training_pipeline import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
+from agent.advisor.rewards.reward_model import compute_reward_label
+from agent.advisor.storage.trace_store import AdvisorTraceStore
+from agent.advisor.training.training_pipeline import (
     AblationSpec,
     ExperimentConfig,
     RollbackPolicy,

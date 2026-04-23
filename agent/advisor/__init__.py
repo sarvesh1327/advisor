@@ -1,7 +1,15 @@
 """Public package surface for the standalone Advisor product."""
 
-from .api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
-from .benchmark import (
+from .core.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorOutcome,
+    AdvisorTaskRequest,
+    AdvisorTaskRunResult,
+)
+from .core.settings import AdvisorSettings
+from .core.version import __version__
+from .evaluation.benchmark import (
     BenchmarkCase,
     BenchmarkRunManifest,
     BenchmarkSuite,
@@ -9,18 +17,17 @@ from .benchmark import (
     compare_benchmark_arms,
     freeze_benchmark_suite,
 )
-from .gateway import AdvisorGateway
-from .hardening import (
-    BenchmarkReleasePolicy,
-    DeploymentHardeningProfile,
-    build_alert_summary,
-    build_deployment_hardening_profile,
-    evaluate_release_gate,
-    export_product_bundle,
-    import_product_bundle,
-    lock_truth_surface_contract,
+from .evaluation.results_pass import (
+    build_failure_taxonomy,
+    build_phase16_results_report,
+    default_paper_divergences,
+    summarize_ablation_results,
+    summarize_canonical_study,
+    summarize_provenance_coverage,
+    summarize_transfer_results,
+    write_phase16_results_report,
 )
-from .integrations import (
+from .execution.integrations import (
     BuildTestCommandVerifier,
     CodingAgentSubprocessExecutor,
     DomainWorkerSubprocessExecutor,
@@ -30,14 +37,18 @@ from .integrations import (
     RubricTextVerifier,
     ScreenshotHashVerifier,
 )
-from .observability import (
-    LiveMetricsSnapshot,
-    RunEventLogger,
-    build_audit_report,
-    export_live_metrics,
-    redact_packet,
+from .execution.orchestration import (
+    AdvisorOrchestrator,
+    BuildTestVerifier,
+    CodingAgentExecutor,
+    DeterministicABRouter,
+    DomainWorkerExecutor,
+    FrontierChatExecutor,
+    HumanReviewVerifier,
+    RubricVerifier,
+    ScreenshotComparisonVerifier,
 )
-from .operator_runtime import (
+from .operators.operator_runtime import (
     DeploymentProfile,
     EvalProfileJobPayload,
     OperatorJobQueue,
@@ -50,46 +61,36 @@ from .operator_runtime import (
     build_operator_snapshot,
     run_operator_job,
 )
-from .orchestration import (
-    AdvisorOrchestrator,
-    BuildTestVerifier,
-    CodingAgentExecutor,
-    DeterministicABRouter,
-    DomainWorkerExecutor,
-    FrontierChatExecutor,
-    HumanReviewVerifier,
-    RubricVerifier,
-    ScreenshotComparisonVerifier,
+from .product.api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
+from .product.gateway import AdvisorGateway
+from .product.hardening import (
+    BenchmarkReleasePolicy,
+    DeploymentHardeningProfile,
+    build_alert_summary,
+    build_deployment_hardening_profile,
+    evaluate_release_gate,
+    export_product_bundle,
+    import_product_bundle,
+    lock_truth_surface_contract,
 )
-from .profiles import AdvisorProfile, AdvisorProfileRegistry, AdvisorTrainingConfig
-from .results_pass import (
-    build_failure_taxonomy,
-    build_phase16_results_report,
-    default_paper_divergences,
-    summarize_ablation_results,
-    summarize_canonical_study,
-    summarize_provenance_coverage,
-    summarize_transfer_results,
-    write_phase16_results_report,
+from .profiles.profiles import AdvisorProfile, AdvisorProfileRegistry, AdvisorTrainingConfig
+from .rewards.reward_registry import RewardRegistry
+from .rewards.reward_specs import RewardSpec
+from .storage.observability import (
+    LiveMetricsSnapshot,
+    RunEventLogger,
+    build_audit_report,
+    export_live_metrics,
+    redact_packet,
 )
-from .reward_registry import RewardRegistry
-from .reward_specs import RewardSpec
-from .schemas import (
-    AdviceBlock,
-    AdvisorInputPacket,
-    AdvisorOutcome,
-    AdvisorTaskRequest,
-    AdvisorTaskRunResult,
-)
-from .settings import AdvisorSettings
-from .training_backends import (
+from .training.training_backends import (
     GRPOTrainingBackend,
     MLXLoRATrainer,
     TrainerRunArtifact,
     TrainingBackendRunRequest,
     TrainingBackendRunResult,
 )
-from .training_rollouts import (
+from .training.training_rollouts import (
     RolloutTurnRecord,
     TrainingRolloutGroupRequest,
     TrainingRolloutGroupResult,
@@ -98,7 +99,7 @@ from .training_rollouts import (
     execute_training_rollout,
     execute_training_rollout_group,
 )
-from .training_runtime import (
+from .training.training_runtime import (
     CheckpointLifecycleManager,
     ProfileCheckpointEvaluation,
     TrainingCheckpointRecord,
@@ -109,7 +110,6 @@ from .training_runtime import (
     resolve_active_profile_checkpoint_metadata,
     run_profile_training_job,
 )
-from .version import __version__
 
 # Keep __all__ narrow so external callers depend on stable entrypoints only.
 __all__ = [

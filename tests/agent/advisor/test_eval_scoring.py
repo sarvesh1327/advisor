@@ -1,6 +1,6 @@
-from agent.advisor.eval_fixtures import EvalExpectation, EvalFixture, HumanReviewRubric
-from agent.advisor.eval_scoring import score_advice_against_fixture
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, FocusTarget, RepoSummary
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, FocusTarget, RepoSummary
+from agent.advisor.evaluation.eval_fixtures import EvalExpectation, EvalFixture, HumanReviewRubric
+from agent.advisor.evaluation.eval_scoring import score_advice_against_fixture
 
 
 def _fixture() -> EvalFixture:

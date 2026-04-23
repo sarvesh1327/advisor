@@ -3,7 +3,7 @@ from pathlib import Path
 
 from agent.advisor import GRPOTrainingBackend, TrainingBackendRunRequest
 from agent.advisor.profiles import AdvisorTrainingConfig
-from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
+from agent.advisor.training.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
 
 
 class StubTrainer:

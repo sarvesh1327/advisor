@@ -1,6 +1,7 @@
 import json
 
-from agent.advisor.hardening import (
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.product.hardening import (
     BenchmarkReleasePolicy,
     build_alert_summary,
     build_deployment_hardening_profile,
@@ -9,7 +10,6 @@ from agent.advisor.hardening import (
     import_product_bundle,
     lock_truth_surface_contract,
 )
-from agent.advisor.settings import AdvisorSettings
 
 
 def _results_report(*, lift: float = 0.12, reward_coverage: float = 1.0, lineage_coverage: float = 1.0, open_divergences: int = 1):

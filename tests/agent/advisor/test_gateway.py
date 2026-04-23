@@ -1,6 +1,6 @@
-from agent.advisor.gateway import AdvisorGateway, create_app
-from agent.advisor.schemas import AdviceBlock, ExecutorInjectionPolicy
-from agent.advisor.settings import AdvisorSettings
+from agent.advisor.core.schemas import AdviceBlock, ExecutorInjectionPolicy
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.product.gateway import AdvisorGateway, create_app
 
 
 def _write_profiles_config(path):

@@ -1,6 +1,6 @@
-from agent.advisor.context_builder import ContextBuilder
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.adapters.context_builder import ContextBuilder
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def test_context_builder_collects_repo_slice(tmp_path):

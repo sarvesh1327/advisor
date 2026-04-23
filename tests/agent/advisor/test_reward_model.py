@@ -1,6 +1,4 @@
-from agent.advisor.reward_model import RewardWeights, compute_reward_label
-from agent.advisor.reward_registry import RewardRegistry
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorInputPacket,
     AdvisorOutcome,
@@ -8,7 +6,9 @@ from agent.advisor.schemas import (
     FocusTarget,
     RepoSummary,
 )
-from agent.advisor.settings import AdvisorSettings
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.rewards.reward_model import RewardWeights, compute_reward_label
+from agent.advisor.rewards.reward_registry import RewardRegistry
 
 
 def _packet(run_id: str = "run-1"):
