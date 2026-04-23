@@ -1,3 +1,5 @@
+import builtins
+import importlib.util
 import json
 from pathlib import Path
 
@@ -128,6 +130,31 @@ class RecordingTrainer:
                 "trained_examples": len(flattened_candidates),
             },
         }
+
+
+
+def test_training_backends_module_imports_without_numpy_when_training_stack_is_missing(monkeypatch):
+    module_path = Path("agent/advisor/training/training_backends.py").resolve()
+    module_name = "training_backends_without_numpy_test"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "numpy" or name.startswith("mlx") or name.startswith("mlx_lm"):
+            raise ImportError(f"blocked optional dependency: {name}")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    spec.loader.exec_module(module)
+
+    assert module.np is None
+    assert module.mx is None
+    assert module.nn is None
+    assert hasattr(module, "GRPOTrainingBackend")
+    assert hasattr(module, "TrainingBackendRunRequest")
 
 
 

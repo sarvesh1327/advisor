@@ -128,6 +128,31 @@ def test_context_builder_selects_image_adapter_for_ui_tasks(tmp_path):
     assert packet.artifacts[0].kind == "image"
 
 
+def test_context_builder_selects_text_ui_adapter_for_text_ui_profile_domain(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "ui" / "layouts").mkdir(parents=True)
+    (repo / "ui" / "layouts" / "home.json").write_text("{}")
+    (repo / "references").mkdir(parents=True)
+    (repo / "references" / "brand-guide.md").write_text("brand")
+
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    builder = ContextBuilder(trace_store=store)
+    packet = builder.build(
+        task_text="refresh the landing page layout from the written brief",
+        repo_path=str(repo),
+        tool_limits={},
+        acceptance_criteria=["layout follows brief"],
+        profile_domain="text-ui",
+        changed_files=["ui/layouts/home.json"],
+    )
+
+    assert packet.task.domain == "text-ui"
+    assert packet.context.summary == "text-ui task context"
+    assert packet.domain_capabilities[0].domain == "text-ui"
+    assert packet.artifacts[0].kind == "layout"
+
+
+
 def test_context_builder_packs_large_context_to_budget(tmp_path):
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)

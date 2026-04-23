@@ -12,6 +12,10 @@ def _write_profiles_config(path):
         domain = "coding"
         description = "Default coding advisor profile"
 
+        [profiles.text-ui]
+        domain = "text-ui"
+        description = "Text UI advisor profile"
+
         [profiles.image-ui]
         domain = "image-ui"
         description = "UI advisor profile"
@@ -106,6 +110,35 @@ def test_gateway_resolves_explicit_profile_override(tmp_path):
     assert result.advisor_profile_id == "image-ui"
     assert stored is not None
     assert stored["advisor_profile_id"] == "image-ui"
+
+
+
+def test_gateway_uses_text_ui_profile_to_build_text_ui_packet(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "ui" / "layouts").mkdir(parents=True)
+    (repo / "ui" / "layouts" / "home.json").write_text("{}")
+    profiles_path = tmp_path / "profiles.toml"
+    _write_profiles_config(profiles_path)
+
+    gateway = AdvisorGateway(
+        settings=AdvisorSettings(
+            enabled=True,
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profile_id="coding-default",
+            advisor_profiles_path=str(profiles_path),
+        ),
+        runtime=StubRuntime(),
+    )
+
+    result = gateway.task_run(
+        task_text="refresh the homepage layout from the written brief",
+        repo_path=str(repo),
+        advisor_profile_id="text-ui",
+    )
+
+    assert result.advisor_profile_id == "text-ui"
+    assert result.advisor_input_packet.task.domain == "text-ui"
+    assert result.advisor_input_packet.context.summary == "text-ui task context"
 
 
 class ProfileAwareStubRuntime(StubRuntime):

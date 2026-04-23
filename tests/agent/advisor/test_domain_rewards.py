@@ -140,6 +140,29 @@ def test_reward_registry_preserves_explicit_zero_constraint_metric_over_fallback
 
 
 
+def test_reward_registry_resolves_text_ui_profile_to_ui_layout_reward():
+    registry = RewardRegistry.default()
+    packet = _packet("run-text-ui")
+    packet.task.domain = "text-ui"
+    advice = AdviceBlock(task_type="ui-update", recommended_plan=["draft the layout spec"], confidence=0.8)
+    outcome = AdvisorOutcome(run_id=packet.run_id, status="success", files_touched=["gateway.py"], retries=0, tests_run=[])
+
+    label = registry.compute_for_profile_id(
+        "text-ui",
+        packet,
+        advice,
+        outcome,
+        executor_result={"status": "success", "metadata": {"render_valid": True}},
+        verifier_results=[{"status": "pass", "metadata": {"hard_constraint_pass_rate": 0.8, "soft_style_score": 0.6}}],
+    )
+
+    assert label.advisor_profile_id == "text-ui"
+    assert label.reward_profile_id == "ui_from_text_layout"
+    assert label.reward_formula == "ui_from_text_layout"
+    assert label.raw_reward == 0.75
+
+
+
 def test_reward_registry_handles_non_numeric_steps_by_falling_back_to_retry_count():
     registry = RewardRegistry.default()
     packet = _packet("run-bad-steps")

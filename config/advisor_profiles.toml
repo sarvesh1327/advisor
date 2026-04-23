@@ -20,7 +20,62 @@ lora_alpha = 64
 lora_dropout = 0.05
 target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
+[profiles.researcher]
+domain = "research-writing"
+description = "Research and writing advisor profile"
+reward_spec_id = "research_writing_match"
+
+[profiles.researcher.training]
+backend = "grpo"
+rollout_group_size = 4
+num_generations = 8
+max_steps = 12
+max_prompt_tokens = 4096
+max_completion_tokens = 1024
+checkpoint_root = "checkpoints/researcher"
+base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+adapter_method = "lora"
+lora_rank = 32
+lora_alpha = 64
+lora_dropout = 0.05
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+[profiles.text-ui]
+domain = "text-ui"
+description = "Text-only UI advisor profile"
+reward_spec_id = "ui_from_text_layout"
+
+[profiles.text-ui.training]
+backend = "grpo"
+rollout_group_size = 4
+num_generations = 8
+max_steps = 12
+max_prompt_tokens = 4096
+max_completion_tokens = 1024
+checkpoint_root = "checkpoints/text-ui"
+base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+adapter_method = "lora"
+lora_rank = 32
+lora_alpha = 64
+lora_dropout = 0.05
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
 [profiles.image-ui]
 domain = "image-ui"
 description = "UI and image advisor profile"
 reward_spec_id = "ui_from_text_layout"
+
+[profiles.image-ui.training]
+backend = "grpo"
+rollout_group_size = 4
+num_generations = 8
+max_steps = 12
+max_prompt_tokens = 4096
+max_completion_tokens = 1024
+checkpoint_root = "checkpoints/image-ui"
+base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+adapter_method = "lora"
+lora_rank = 32
+lora_alpha = 64
+lora_dropout = 0.05
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]

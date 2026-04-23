@@ -182,8 +182,11 @@ def _safe_step_count(raw_steps: Any, *, fallback: int) -> int:
 
 
 def _default_reward_spec_for_profile(profile_id: str) -> str:
+    # Keep live profile ids mapped to explicit reward specs instead of relying on implicit name matches.
     return {
         "coding-default": "coding_swe_efficiency",
+        "researcher": "research_writing_match",
+        "text-ui": "ui_from_text_layout",
         "image-ui": "ui_from_text_layout",
     }.get(profile_id, profile_id)
 

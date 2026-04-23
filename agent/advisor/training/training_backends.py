@@ -5,7 +5,6 @@ import math
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 from pydantic import BaseModel, Field
 
 from agent.advisor.profiles import AdvisorTrainingConfig
@@ -15,6 +14,7 @@ try:
     import mlx.core as mx
     import mlx.nn as nn
     import mlx.optimizers as mlx_optim
+    import numpy as np
     from mlx_lm import load as mlx_lm_load
     from mlx_lm.tuner import TrainingArgs as mlx_TrainingArgs
     from mlx_lm.tuner import linear_to_lora_layers as mlx_linear_to_lora_layers
@@ -23,6 +23,7 @@ try:
     from mlx_lm.tuner.datasets import CompletionsDataset as MLXCompletionsDataset
     from mlx_lm.utils import save_config as mlx_save_config
 except ImportError:
+    np = None
     mx = None
     nn = None
     mlx_optim = None
@@ -505,7 +506,8 @@ def _normalize_trainer_result(result: TrainerRunArtifact | dict) -> TrainerRunAr
 
 def _ensure_mlx_training_dependencies() -> None:
     if (
-        mx is None
+        np is None
+        or mx is None
         or nn is None
         or mlx_optim is None
         or mlx_lm_load is None

@@ -261,6 +261,96 @@ def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(
     assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
 
 
+
+def test_run_profile_training_job_supports_researcher_profile(tmp_path):
+    registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    rollout_group = TrainingRolloutGroupResult(
+        group_id="group-research",
+        advisor_profile_id="researcher",
+        results=[
+            TrainingRolloutResult(
+                rollout_id="rollout-research-1",
+                advisor_profile_id="researcher",
+                packet={"run_id": "run-research-1", "task": {"domain": "research-writing"}},
+                primary_advice={"recommended_plan": ["review sources", "draft structured summary"]},
+                executor_result={"status": "success"},
+                verifier_results=[],
+                outcome={"status": "success"},
+                reward_label={"total_reward": 0.91},
+                diagnostics={"multi_turn": False},
+            )
+        ],
+        reward_values=[0.91],
+        summary={"mean_reward": 0.91},
+    )
+
+    result = run_profile_training_job(
+        job_id="job-research",
+        experiment_id="exp-14-research",
+        advisor_profile_id="researcher",
+        rollout_group=rollout_group,
+        profile_registry=registry,
+        lifecycle_manager=manager,
+        backend=GRPOTrainingBackend(trainer=StubTrainer()),
+    )
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    checkpoint_registry = json.loads((tmp_path / "artifacts" / "checkpoint_registry.json").read_text(encoding="utf-8"))
+
+    assert result.advisor_profile_id == "researcher"
+    assert result.backend_name == "grpo"
+    assert manifest["advisor_profile_id"] == "researcher"
+    assert manifest["rollout_group_id"] == "group-research"
+    assert checkpoint_registry[0]["advisor_profile_id"] == "researcher"
+    assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
+    assert "backend_manifest" in result.backend_artifact_paths
+
+
+
+def test_run_profile_training_job_supports_text_ui_profile(tmp_path):
+    registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    rollout_group = TrainingRolloutGroupResult(
+        group_id="group-text-ui",
+        advisor_profile_id="text-ui",
+        results=[
+            TrainingRolloutResult(
+                rollout_id="rollout-text-ui-1",
+                advisor_profile_id="text-ui",
+                packet={"run_id": "run-text-ui-1", "task": {"domain": "text-ui"}},
+                primary_advice={"recommended_plan": ["review layout brief", "update layout spec"]},
+                executor_result={"status": "success"},
+                verifier_results=[],
+                outcome={"status": "success"},
+                reward_label={"total_reward": 0.88},
+                diagnostics={"multi_turn": False},
+            )
+        ],
+        reward_values=[0.88],
+        summary={"mean_reward": 0.88},
+    )
+
+    result = run_profile_training_job(
+        job_id="job-text-ui",
+        experiment_id="exp-14-text-ui",
+        advisor_profile_id="text-ui",
+        rollout_group=rollout_group,
+        profile_registry=registry,
+        lifecycle_manager=manager,
+        backend=GRPOTrainingBackend(trainer=StubTrainer()),
+    )
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    checkpoint_registry = json.loads((tmp_path / "artifacts" / "checkpoint_registry.json").read_text(encoding="utf-8"))
+
+    assert result.advisor_profile_id == "text-ui"
+    assert manifest["advisor_profile_id"] == "text-ui"
+    assert manifest["rollout_group_id"] == "group-text-ui"
+    assert checkpoint_registry[0]["advisor_profile_id"] == "text-ui"
+
+
+
 def test_checkpoint_lifecycle_manager_filters_active_checkpoints_by_profile(tmp_path):
     manager = CheckpointLifecycleManager(tmp_path / "artifacts")
     manager.register_checkpoint(
