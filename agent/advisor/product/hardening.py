@@ -8,6 +8,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.evaluation.measurement import build_phase5_measurement_report
+from agent.advisor.operators.operator_runtime import OperatorJobRecord
+from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 
 class BenchmarkReleasePolicy(BaseModel):
@@ -25,6 +28,69 @@ class DeploymentHardeningProfile(BaseModel):
     operator_runbooks: list[str] = Field(default_factory=list)
     backup_paths: list[str] = Field(default_factory=list)
     alerting: dict = Field(default_factory=dict)
+
+
+class Phase8ValidationPolicy(BaseModel):
+    min_completed_cycles: int = 2
+    min_promoted_cycles: int = 1
+    min_best_overall_delta: float = 0.0
+    require_active_checkpoint: bool = True
+    require_rollback_coverage: bool = True
+    max_failed_jobs: int = 0
+
+
+def build_phase8_validation_report(
+    *,
+    lifecycle_manager: CheckpointLifecycleManager,
+    job_records: list[OperatorJobRecord] | list[dict] | None = None,
+    required_profiles: list[str] | None = None,
+    policy: Phase8ValidationPolicy | None = None,
+) -> dict:
+    active_policy = policy or Phase8ValidationPolicy()
+    measurement = build_phase5_measurement_report(
+        lifecycle_manager=lifecycle_manager,
+        job_records=job_records,
+    )
+    normalized_jobs = [item.model_dump() if isinstance(item, OperatorJobRecord) else dict(item) for item in (job_records or [])]
+    resolved_required_profiles = list(required_profiles or sorted((measurement.get("profiles") or {}).keys()))
+    available_profiles = measurement.get("profiles") or {}
+    missing_profiles = [profile_id for profile_id in resolved_required_profiles if profile_id not in available_profiles]
+    profile_reports = {}
+    profile_failed_checks = []
+    for profile_id in resolved_required_profiles:
+        profile_report = _build_phase8_profile_report(
+            profile_id,
+            available_profiles.get(profile_id),
+            active_policy,
+        )
+        profile_reports[profile_id] = profile_report
+        profile_failed_checks.extend(f"{profile_id}:{name}" for name, item in profile_report["checks"].items() if not item["pass"])
+
+    job_summary = _build_phase8_job_summary(normalized_jobs)
+    failed_jobs_check = {
+        "actual": job_summary["failed"],
+        "threshold": active_policy.max_failed_jobs,
+        "pass": job_summary["failed"] <= active_policy.max_failed_jobs,
+    }
+    failed_checks = []
+    if missing_profiles:
+        failed_checks.append("required_profiles")
+    failed_checks.extend(profile_failed_checks)
+    if not failed_jobs_check["pass"]:
+        failed_checks.append("failed_jobs")
+    return {
+        "pass": not failed_checks,
+        "failed_checks": failed_checks,
+        "policy": active_policy.model_dump(),
+        "required_profiles": resolved_required_profiles,
+        "missing_profiles": missing_profiles,
+        "job_summary": job_summary,
+        "checks": {
+            "failed_jobs": failed_jobs_check,
+        },
+        "profiles": profile_reports,
+        "measurement": measurement,
+    }
 
 
 def evaluate_release_gate(report: dict, policy: BenchmarkReleasePolicy | None = None) -> dict:
@@ -175,4 +241,88 @@ def _check_metric(actual: float, threshold: float) -> dict:
         "actual": round(actual, 4),
         "threshold": round(threshold, 4),
         "pass": actual >= threshold,
+    }
+
+
+
+def _build_phase8_job_summary(jobs: list[dict]) -> dict:
+    counts = {
+        "total": len(jobs),
+        "completed": 0,
+        "failed": 0,
+        "pending": 0,
+        "running": 0,
+    }
+    for job in jobs:
+        status = job.get("status")
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+
+def _build_phase8_profile_report(profile_id: str, measurement_profile: dict | None, policy: Phase8ValidationPolicy) -> dict:
+    if measurement_profile is None:
+        return {
+            "summary": {
+                "checkpoint_count": 0,
+                "cycle_count": 0,
+                "promoted_cycle_count": 0,
+                "active_checkpoint_id": None,
+                "latest_checkpoint_id": None,
+                "latest_overall_delta": None,
+                "best_overall_delta": 0.0,
+                "rollback_cycle_count": 0,
+            },
+            "checkpoint_history": [],
+            "trend_history": [],
+            "checks": {
+                "completed_cycles": _check_count(0, policy.min_completed_cycles),
+                "promoted_cycles": _check_count(0, policy.min_promoted_cycles),
+                "best_overall_delta": _check_metric(0.0, policy.min_best_overall_delta),
+                "active_checkpoint": _check_presence(None, required=policy.require_active_checkpoint),
+                "rollback_coverage": _check_count(0, 1 if policy.require_rollback_coverage else 0),
+            },
+        }
+
+    trend_history = list(measurement_profile.get("trend_history") or [])
+    summary = dict(measurement_profile.get("summary") or {})
+    rollback_cycle_count = sum(1 for item in trend_history if item.get("rollback") is True)
+    summary["rollback_cycle_count"] = rollback_cycle_count
+    checks = {
+        "completed_cycles": _check_count(int(summary.get("cycle_count") or 0), policy.min_completed_cycles),
+        "promoted_cycles": _check_count(int(summary.get("promoted_cycle_count") or 0), policy.min_promoted_cycles),
+        "best_overall_delta": _check_metric(float(summary.get("best_overall_delta") or 0.0), policy.min_best_overall_delta),
+        "active_checkpoint": _check_presence(summary.get("active_checkpoint_id"), required=policy.require_active_checkpoint),
+        "rollback_coverage": _check_count(rollback_cycle_count, 1 if policy.require_rollback_coverage else 0),
+    }
+    return {
+        "summary": summary,
+        "checkpoint_history": list(measurement_profile.get("checkpoint_history") or []),
+        "trend_history": trend_history,
+        "checks": checks,
+    }
+
+
+
+def _check_count(actual: int, minimum: int) -> dict:
+    return {
+        "actual": actual,
+        "threshold": minimum,
+        "pass": actual >= minimum,
+    }
+
+
+
+def _check_presence(value: str | None, *, required: bool) -> dict:
+    if not required:
+        return {
+            "actual": value,
+            "threshold": "optional",
+            "pass": True,
+        }
+    return {
+        "actual": value,
+        "threshold": "present",
+        "pass": bool(value),
     }

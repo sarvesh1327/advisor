@@ -272,6 +272,8 @@ def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, 
     hardening_payload = json.loads(capsys.readouterr().out)
     release_exit = cli.main(["release-gate", "--report-path", str(report_path)])
     release_payload = json.loads(capsys.readouterr().out)
+    validation_exit = cli.main(["validation-gate", "--required-profile", "coding-default"])
+    validation_payload = json.loads(capsys.readouterr().out)
 
     assert hardening_exit == 0
     assert hardening_payload["mode"] == "hosted"
@@ -279,6 +281,9 @@ def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, 
     assert release_exit == 0
     assert release_payload["verdict"]["pass"] is True
     assert release_payload["alerts"]["severity"] == "info"
+    assert validation_exit == 0
+    assert validation_payload["pass"] is False
+    assert "required_profiles" in validation_payload["failed_checks"]
 
 
 def test_cli_export_and_import_bundle_commands(monkeypatch, tmp_path, capsys):

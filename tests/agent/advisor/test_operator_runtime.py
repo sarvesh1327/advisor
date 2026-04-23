@@ -244,6 +244,30 @@ def test_operator_queue_pause_resume_and_forced_eval_checkpoint_helpers(tmp_path
 
 
 
+def test_enqueue_forced_profile_eval_reuses_existing_job_for_identical_payload(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    manifests = _benchmark_manifest_pair(baseline_score=0.4, advisor_score=0.7)
+
+    first = enqueue_forced_profile_eval(
+        queue,
+        advisor_profile_id="coding-default",
+        candidate_checkpoint_id="ckpt-operator",
+        benchmark_manifests=manifests,
+        promotion_threshold=0.15,
+    )
+    second = enqueue_forced_profile_eval(
+        queue,
+        advisor_profile_id="coding-default",
+        candidate_checkpoint_id="ckpt-operator",
+        benchmark_manifests=manifests,
+        promotion_threshold=0.15,
+    )
+
+    assert first.job_id == second.job_id
+    assert len(queue.list_jobs()) == 1
+
+
+
 def test_operator_job_queue_rejects_unknown_job_types_and_invalid_payloads(tmp_path):
     queue = OperatorJobQueue(tmp_path / "jobs.json")
 

@@ -60,6 +60,7 @@ def test_create_http_app_includes_health_route(tmp_path):
     assert "/v1/operator/checkpoints/{advisor_profile_id}" in routes
     assert "/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval" in routes
     assert "/v1/operator/retention/enforce" in routes
+    assert "/v1/validation/gate" in routes
 
 
 def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
@@ -112,3 +113,19 @@ def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
 
 def test_get_version_returns_repo_version():
     assert get_version() == "0.1.0"
+
+
+def test_validation_gate_route_reports_failed_jobs_and_missing_rollback(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    app = create_http_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/validation/gate",
+        json={"required_profiles": ["coding-default"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pass"] is False
+    assert "required_profiles" in payload["failed_checks"]

@@ -18,6 +18,7 @@ from agent.advisor.product.api import create_gateway, create_http_app, get_versi
 from agent.advisor.product.hardening import (
     build_alert_summary,
     build_deployment_hardening_profile,
+    build_phase8_validation_report,
     evaluate_release_gate,
     export_product_bundle,
     import_product_bundle,
@@ -96,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
     release_gate_parser = subparsers.add_parser("release-gate", help="Evaluate a Phase 16 results report against release thresholds")
     release_gate_parser.add_argument("--report-path", required=True, help="Path to Phase 16 results report JSON")
     release_gate_parser.set_defaults(handler=_handle_release_gate)
+
+    validation_gate_parser = subparsers.add_parser("validation-gate", help="Evaluate the Phase 8 final validation gate from local state")
+    validation_gate_parser.add_argument("--required-profile", action="append", default=[], help="Repeatable required advisor profile id")
+    validation_gate_parser.set_defaults(handler=_handle_validation_gate)
 
     export_bundle_parser = subparsers.add_parser("export-bundle", help="Export product state bundle")
     export_bundle_parser.add_argument("--output-dir", required=True, help="Destination bundle directory")
@@ -266,6 +271,19 @@ def _handle_release_gate(args) -> int:
     }
     print(json.dumps(payload, ensure_ascii=False))
     return 0
+
+
+
+def _handle_validation_gate(args) -> int:
+    settings = AdvisorSettings.load()
+    report = build_phase8_validation_report(
+        lifecycle_manager=_build_lifecycle_manager(settings),
+        job_records=OperatorJobQueue(_queue_path(settings)).list_jobs(),
+        required_profiles=args.required_profile,
+    )
+    print(json.dumps(report, ensure_ascii=False))
+    return 0
+
 
 
 def _handle_export_bundle(args) -> int:
