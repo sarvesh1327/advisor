@@ -160,6 +160,41 @@ def test_cli_operator_checkpoint_and_queue_controls_print_json(monkeypatch, tmp_
         ),
         encoding="utf-8",
     )
+    benchmark_manifests_path = tmp_path / "benchmark-manifests.json"
+    benchmark_manifests_path.write_text(
+        json.dumps(
+            [
+                {
+                    "run_id": "baseline-run",
+                    "fixture_id": "coding-main",
+                    "domain": "coding",
+                    "split": "validation",
+                    "packet_hash": "abc",
+                    "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+                    "verifier_set": ["build-check"],
+                    "routing_arm": "baseline",
+                    "reward_version": "phase8-v1",
+                    "score": {"overall_score": 0.5, "focus_target_recall": 0.5},
+                },
+                {
+                    "run_id": "advisor-run",
+                    "fixture_id": "coding-main",
+                    "domain": "coding",
+                    "split": "validation",
+                    "packet_hash": "abc",
+                    "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+                    "verifier_set": ["build-check"],
+                    "routing_arm": "advisor",
+                    "advisor_profile_id": "coding-default",
+                    "reward_version": "phase8-v1",
+                    "score": {"overall_score": 0.7, "focus_target_recall": 0.7},
+                },
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
     monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: StubGatewayWithStore(store))
@@ -180,6 +215,8 @@ def test_cli_operator_checkpoint_and_queue_controls_print_json(monkeypatch, tmp_
             "coding-default",
             "--checkpoint-id",
             "ckpt-cli",
+            "--benchmark-manifests-path",
+            str(benchmark_manifests_path),
             "--promotion-threshold",
             "0.2",
         ]
@@ -198,6 +235,9 @@ def test_cli_operator_checkpoint_and_queue_controls_print_json(monkeypatch, tmp_
     assert force_eval_payload["job_type"] == "eval-profile"
     assert force_eval_payload["payload"]["candidate_checkpoint_id"] == "ckpt-cli"
     assert force_eval_payload["payload"]["promotion_threshold"] == 0.2
+    assert len(force_eval_payload["payload"]["benchmark_manifests"]) == 2
+    assert force_eval_payload["payload"]["benchmark_manifests"][0]["routing_arm"] == "baseline"
+    assert force_eval_payload["payload"]["benchmark_manifests"][1]["routing_arm"] == "advisor"
 
 
 

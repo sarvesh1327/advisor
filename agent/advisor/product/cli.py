@@ -78,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     operator_force_eval_parser = subparsers.add_parser("operator-force-eval", help="Enqueue a forced profile eval job")
     operator_force_eval_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
     operator_force_eval_parser.add_argument("--checkpoint-id", required=True, help="Candidate checkpoint id")
+    operator_force_eval_parser.add_argument("--benchmark-manifests-path", required=True, help="Path to benchmark manifests JSON")
     operator_force_eval_parser.add_argument("--promotion-threshold", type=float, default=0.05, help="Promotion threshold")
     operator_force_eval_parser.set_defaults(handler=_handle_operator_force_eval)
 
@@ -221,7 +222,7 @@ def _handle_operator_force_eval(args) -> int:
         queue,
         advisor_profile_id=args.advisor_profile_id,
         candidate_checkpoint_id=args.checkpoint_id,
-        benchmark_manifests=[],
+        benchmark_manifests=_load_json_list(args.benchmark_manifests_path),
         promotion_threshold=args.promotion_threshold,
     )
     print(json.dumps(record.model_dump(), ensure_ascii=False))
@@ -288,6 +289,14 @@ def _queue_path(settings: AdvisorSettings) -> Path:
 
 def _build_lifecycle_manager(settings: AdvisorSettings) -> CheckpointLifecycleManager:
     return CheckpointLifecycleManager(Path(settings.trace_db_path).expanduser().parent / "artifacts")
+
+
+
+def _load_json_list(path: str) -> list[dict]:
+    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(f"expected JSON list at {path}")
+    return payload
 
 
 

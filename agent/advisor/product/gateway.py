@@ -7,6 +7,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from agent.advisor.adapters.context_builder import ContextBuilder
 from agent.advisor.core.injector import render_advice_for_user_context
 from agent.advisor.core.schemas import AdvisorTaskRequest, AdvisorTaskRunResult
@@ -164,6 +166,11 @@ class AdvisorGateway:
         )
 
 
+class ForceProfileEvalRequest(BaseModel):
+    benchmark_manifests: list[dict]
+    promotion_threshold: float = 0.05
+
+
 def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = None):
     if FastAPI is None:
         raise RuntimeError(
@@ -239,13 +246,13 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
         return inspect_profile_checkpoints(lifecycle_manager, advisor_profile_id=advisor_profile_id)
 
     @app.post("/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval")
-    def operator_force_profile_eval(advisor_profile_id: str, checkpoint_id: str, promotion_threshold: float = 0.05):
+    def operator_force_profile_eval(advisor_profile_id: str, checkpoint_id: str, req: ForceProfileEvalRequest):
         return enqueue_forced_profile_eval(
             operator_queue,
             advisor_profile_id=advisor_profile_id,
             candidate_checkpoint_id=checkpoint_id,
-            benchmark_manifests=[],
-            promotion_threshold=promotion_threshold,
+            benchmark_manifests=req.benchmark_manifests,
+            promotion_threshold=req.promotion_threshold,
         ).model_dump()
 
     @app.post("/v1/operator/jobs")

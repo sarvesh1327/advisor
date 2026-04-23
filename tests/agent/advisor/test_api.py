@@ -1,3 +1,5 @@
+from fastapi.testclient import TestClient
+
 from agent.advisor import create_gateway, create_http_app, get_version, run_task
 from agent.advisor.core.schemas import AdviceBlock
 from agent.advisor.core.settings import AdvisorSettings
@@ -58,6 +60,54 @@ def test_create_http_app_includes_health_route(tmp_path):
     assert "/v1/operator/checkpoints/{advisor_profile_id}" in routes
     assert "/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval" in routes
     assert "/v1/operator/retention/enforce" in routes
+
+
+def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    app = create_http_app(settings=settings)
+    client = TestClient(app)
+    benchmark_manifests = [
+        {
+            "run_id": "baseline-run",
+            "fixture_id": "coding-main",
+            "domain": "coding",
+            "split": "validation",
+            "packet_hash": "abc",
+            "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+            "verifier_set": ["build-check"],
+            "routing_arm": "baseline",
+            "reward_version": "phase8-v1",
+            "score": {"overall_score": 0.5, "focus_target_recall": 0.5},
+        },
+        {
+            "run_id": "advisor-run",
+            "fixture_id": "coding-main",
+            "domain": "coding",
+            "split": "validation",
+            "packet_hash": "abc",
+            "executor_config": {"name": "frontier-chat", "kind": "frontier_chat"},
+            "verifier_set": ["build-check"],
+            "routing_arm": "advisor",
+            "advisor_profile_id": "coding-default",
+            "reward_version": "phase8-v1",
+            "score": {"overall_score": 0.7, "focus_target_recall": 0.7},
+        },
+    ]
+
+    response = client.post(
+        "/v1/operator/checkpoints/coding-default/ckpt-1/eval",
+        json={
+            "benchmark_manifests": benchmark_manifests,
+            "promotion_threshold": 0.2,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["payload"]["candidate_checkpoint_id"] == "ckpt-1"
+    assert payload["payload"]["promotion_threshold"] == 0.2
+    assert payload["payload"]["benchmark_manifests"] == benchmark_manifests
+
 
 
 def test_get_version_returns_repo_version():
