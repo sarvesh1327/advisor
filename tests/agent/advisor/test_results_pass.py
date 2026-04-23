@@ -80,6 +80,7 @@ def test_summarize_canonical_study_is_deterministic_and_reports_lift():
         executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
         verifier_set=["build-check"],
         routing_arm="baseline",
+        advisor_profile_id=None,
         reward_version="phase8-v1",
         score={"overall_score": 0.45, "focus_target_recall": 0.5},
     )
@@ -92,6 +93,7 @@ def test_summarize_canonical_study_is_deterministic_and_reports_lift():
         executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
         verifier_set=["build-check"],
         routing_arm="advisor",
+        advisor_profile_id="coding-default",
         reward_version="phase8-v1",
         score={"overall_score": 0.9, "focus_target_recall": 1.0},
     )
@@ -102,6 +104,7 @@ def test_summarize_canonical_study_is_deterministic_and_reports_lift():
     assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
     assert first["lift_summary"]["advisor_minus_baseline_overall_score"] == 0.45
     assert first["protocol"]["parity_rule"] == "same executor, same verifier set, advice injection only"
+    assert first["by_profile"]["coding-default"]["advisor"]["count"] == 1
 
 
 def test_summarize_ablation_and_transfer_results_group_variants_and_executors():
@@ -143,6 +146,7 @@ def test_build_phase16_results_report_captures_failure_taxonomy_provenance_and_d
             executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
             verifier_set=["build-check"],
             routing_arm="baseline",
+            advisor_profile_id=None,
             reward_version="phase8-v1",
             score={"overall_score": 0.5, "focus_target_recall": 0.55},
         ),
@@ -155,6 +159,7 @@ def test_build_phase16_results_report_captures_failure_taxonomy_provenance_and_d
             executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
             verifier_set=["build-check"],
             routing_arm="advisor",
+            advisor_profile_id="coding-default",
             reward_version="phase8-v1",
             score={"overall_score": 0.75, "focus_target_recall": 0.8},
         ),
@@ -178,6 +183,7 @@ def test_build_phase16_results_report_captures_failure_taxonomy_provenance_and_d
     reloaded = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
 
     assert report["canonical_study"]["lift_summary"]["advisor_minus_baseline_overall_score"] == 0.25
+    assert report["canonical_study"]["by_profile"]["coding-default"]["advisor"]["mean_overall_score"] == 0.75
     assert report["failure_taxonomy"]["categories"]["timeout_or_hang"]["count"] == 1
     assert report["provenance_coverage"]["reward_label_coverage"] == 1.0
     assert report["paper_divergences"][0]["status"] == "open"

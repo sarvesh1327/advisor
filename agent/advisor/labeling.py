@@ -13,6 +13,7 @@ def export_training_examples(
     split: str | None = None,
     *,
     min_quality_score: float = 0.0,
+    advisor_profile_id: str | None = None,
 ) -> int:
     output = Path(output_path).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -29,12 +30,16 @@ def export_training_examples(
             reward_label = row.get("reward_label") or {}
             if outcome.get("status") is None or not reward_label:
                 continue
+            resolved_profile_id = reward_label.get("advisor_profile_id") or row.get("advisor_profile_id")
+            if advisor_profile_id and resolved_profile_id != advisor_profile_id:
+                continue
             quality_score = float(reward_label.get("quality_score") or 0.0)
             example_type = reward_label.get("example_type") or "neutral"
             if quality_score < min_quality_score and example_type != "negative":
                 continue
             payload = {
                 "run_id": row["run_id"],
+                "advisor_profile_id": resolved_profile_id,
                 "split": split or reward_label.get("dataset_split") or _assign_export_split(row),
                 "input": row.get("input") or {},
                 "target_advice": row.get("advice") or {},

@@ -32,6 +32,7 @@ class BenchmarkRunManifest(BaseModel):
     executor_config: dict = Field(default_factory=dict)
     verifier_set: list[str] = Field(default_factory=list)
     routing_arm: Literal["baseline", "advisor"]
+    advisor_profile_id: str | None = None
     reward_version: str
     score: dict = Field(default_factory=dict)
 
@@ -80,6 +81,7 @@ def build_benchmark_run_manifest(
         executor_config=executor,
         verifier_set=sorted(item.get("name") for item in verifiers if item.get("name")),
         routing_arm=routing.get("arm", "baseline"),
+        advisor_profile_id=reward_label.get("advisor_profile_id") or run_row.get("advisor_profile_id"),
         reward_version=reward_label.get("reward_version", "unknown"),
         score=score_payload.get("score") or {},
     )
@@ -93,12 +95,14 @@ def compare_benchmark_arms(manifests: list[BenchmarkRunManifest]) -> dict:
     arm_summary: dict[str, dict] = {}
     by_split: dict[str, dict[str, dict]] = {}
     by_domain: dict[str, dict[str, dict]] = {}
+    by_profile: dict[str, dict[str, dict]] = {}
     ablation_axes = {
         "domains": sorted({item.domain for item in manifests}),
         "executor_kinds": sorted({item.executor_config.get("kind", "unknown") for item in manifests}),
         "reward_versions": sorted({item.reward_version for item in manifests}),
         "splits": sorted({item.split for item in manifests}),
         "verifier_sets": sorted({"|".join(item.verifier_set) if item.verifier_set else "" for item in manifests}),
+        "advisor_profiles": sorted({item.advisor_profile_id for item in manifests if item.advisor_profile_id}),
     }
     for item in manifests:
         overall = float(item.score.get("overall_score", 0.0))
@@ -115,6 +119,14 @@ def compare_benchmark_arms(manifests: list[BenchmarkRunManifest]) -> dict:
         domain_bucket = by_domain.setdefault(item.domain, {}).setdefault(item.routing_arm, {"count": 0, "overall_total": 0.0})
         domain_bucket["count"] += 1
         domain_bucket["overall_total"] += overall
+
+        if item.advisor_profile_id:
+            profile_bucket = by_profile.setdefault(item.advisor_profile_id, {}).setdefault(
+                item.routing_arm,
+                {"count": 0, "overall_total": 0.0},
+            )
+            profile_bucket["count"] += 1
+            profile_bucket["overall_total"] += overall
 
     finalized_arm_summary = {
         arm: {
@@ -144,6 +156,16 @@ def compare_benchmark_arms(manifests: list[BenchmarkRunManifest]) -> dict:
         }
         for domain, arms in by_domain.items()
     }
+    finalized_by_profile = {
+        profile_id: {
+            arm: {
+                "count": bucket["count"],
+                "mean_overall_score": round(bucket["overall_total"] / bucket["count"], 4) if bucket["count"] else 0.0,
+            }
+            for arm, bucket in arms.items()
+        }
+        for profile_id, arms in by_profile.items()
+    }
 
     advisor_mean = finalized_arm_summary.get("advisor", {}).get("mean_overall_score", 0.0)
     baseline_mean = finalized_arm_summary.get("baseline", {}).get("mean_overall_score", 0.0)
@@ -152,6 +174,7 @@ def compare_benchmark_arms(manifests: list[BenchmarkRunManifest]) -> dict:
         "arm_summary": finalized_arm_summary,
         "by_split": finalized_by_split,
         "by_domain": finalized_by_domain,
+        "by_profile": finalized_by_profile,
         "deltas": {
             "advisor_minus_baseline": {
                 "overall_score": round(advisor_mean - baseline_mean, 4),

@@ -21,6 +21,7 @@ def summarize_canonical_study(benchmark_manifests: list[BenchmarkRunManifest]) -
         "arm_summary": arm_summary,
         "by_split": comparison.get("by_split", {}),
         "by_domain": comparison.get("by_domain", {}),
+        "by_profile": comparison.get("by_profile", {}),
         "ablation_axes": comparison.get("ablation_axes", {}),
         "lift_summary": {
             "baseline_mean_overall_score": baseline.get("mean_overall_score", 0.0),

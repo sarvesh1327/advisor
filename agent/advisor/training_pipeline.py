@@ -38,6 +38,7 @@ def build_dataset_manifest(
     config: ExperimentConfig,
     *,
     min_quality_score: float = 0.0,
+    advisor_profile_id: str | None = None,
 ) -> dict:
     runs = store.list_runs(include_context=True)
     examples = []
@@ -46,6 +47,9 @@ def build_dataset_manifest(
         outcome = row.get("outcome") or {}
         if not reward or outcome.get("status") is None:
             continue
+        resolved_profile_id = reward.get("advisor_profile_id") or row.get("advisor_profile_id")
+        if advisor_profile_id and resolved_profile_id != advisor_profile_id:
+            continue
         quality = float(reward.get("quality_score") or 0.0)
         example_type = reward.get("example_type") or "neutral"
         if quality < min_quality_score and example_type != "negative":
@@ -53,6 +57,7 @@ def build_dataset_manifest(
         examples.append(
             {
                 "run_id": row["run_id"],
+                "advisor_profile_id": resolved_profile_id,
                 "split": reward.get("dataset_split") or "train",
                 "example_type": example_type,
                 "quality_score": quality,
@@ -70,6 +75,7 @@ def build_dataset_manifest(
     }
     splits = sorted({item["split"] for item in examples})
     hard_case_buckets = sorted({item["hard_case_bucket"] for item in examples if item["hard_case_bucket"]})
+    profile_ids = sorted({item["advisor_profile_id"] for item in examples if item.get("advisor_profile_id")})
     return {
         "experiment_id": config.experiment_id,
         "student_model": config.student_model,
@@ -79,6 +85,9 @@ def build_dataset_manifest(
         "domain_mix": config.domain_mix,
         "reward_preset": config.reward_preset,
         "reward_weights": settings.reward_weights().__dict__,
+        "advisor_profile_id": advisor_profile_id,
+        "profile_ids": profile_ids,
+        "profile_count": len(profile_ids),
         "counts": counts,
         "splits": splits,
         "hard_case_buckets": hard_case_buckets,
