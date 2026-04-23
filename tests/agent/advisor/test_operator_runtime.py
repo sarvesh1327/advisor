@@ -19,6 +19,7 @@ from agent.advisor.operators.operator_runtime import (
 )
 from agent.advisor.product.api import create_orchestrator
 from agent.advisor.storage.trace_store import AdvisorTraceStore
+from agent.advisor.training.training_runtime import CheckpointLifecycleManager, TrainingCheckpointRecord
 
 
 class StubRuntime:
@@ -495,6 +496,153 @@ def test_run_continuous_training_cycle_reuses_completed_jobs_on_repeat(tmp_path)
     assert first["eval_job"]["job_id"] == second["eval_job"]["job_id"]
     assert first["promote_job"]["job_id"] == second["promote_job"]["job_id"]
     assert calls == {"train": 1, "eval": 1, "promote": 1}
+
+
+
+def _benchmark_manifest_pair(*, baseline_score: float, advisor_score: float) -> list[dict]:
+    return [
+        BenchmarkRunManifest(
+            run_id=f"baseline-{baseline_score}",
+            fixture_id="coding-main",
+            domain="coding",
+            split="validation",
+            packet_hash=f"hash-baseline-{baseline_score}",
+            executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+            verifier_set=["build-check"],
+            routing_arm="baseline",
+            advisor_profile_id="coding-default",
+            reward_version="phase8-v1",
+            score={"overall_score": baseline_score, "focus_target_recall": baseline_score},
+        ).model_dump(),
+        BenchmarkRunManifest(
+            run_id=f"advisor-{advisor_score}",
+            fixture_id="coding-main",
+            domain="coding",
+            split="validation",
+            packet_hash=f"hash-advisor-{advisor_score}",
+            executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
+            verifier_set=["build-check"],
+            routing_arm="advisor",
+            advisor_profile_id="coding-default",
+            reward_version="phase8-v1",
+            score={"overall_score": advisor_score, "focus_target_recall": advisor_score},
+        ).model_dump(),
+    ]
+
+
+
+def test_run_continuous_training_cycle_reruns_eval_when_eval_inputs_change(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    calls = {"eval": 0}
+
+    first = run_continuous_training_cycle(
+        queue,
+        experiment_id="exp-repeat-eval",
+        advisor_profile_id="coding-default",
+        rollout_group={
+            "group_id": "group-repeat-eval",
+            "advisor_profile_id": "coding-default",
+            "results": [],
+            "reward_values": [],
+            "summary": {},
+        },
+        benchmark_manifests=_benchmark_manifest_pair(baseline_score=0.4, advisor_score=0.7),
+        promotion_threshold=0.05,
+        train_profile_fn=lambda payload: {
+            "checkpoint_id": "ckpt-repeat-eval",
+            "advisor_profile_id": payload.advisor_profile_id,
+        },
+        eval_profile_fn=lambda payload: calls.__setitem__("eval", calls["eval"] + 1) or {
+            "advisor_profile_id": payload.advisor_profile_id,
+            "candidate_checkpoint_id": payload.candidate_checkpoint_id,
+            "promotion_threshold": payload.promotion_threshold,
+            "benchmark_manifest_count": len(payload.benchmark_manifests),
+            "promote": False,
+        },
+    )
+    second = run_continuous_training_cycle(
+        queue,
+        experiment_id="exp-repeat-eval",
+        advisor_profile_id="coding-default",
+        rollout_group={
+            "group_id": "group-repeat-eval",
+            "advisor_profile_id": "coding-default",
+            "results": [],
+            "reward_values": [],
+            "summary": {},
+        },
+        benchmark_manifests=_benchmark_manifest_pair(baseline_score=0.6, advisor_score=0.7),
+        promotion_threshold=0.25,
+        train_profile_fn=lambda payload: (_ for _ in ()).throw(RuntimeError("train should not rerun")),
+        eval_profile_fn=lambda payload: calls.__setitem__("eval", calls["eval"] + 1) or {
+            "advisor_profile_id": payload.advisor_profile_id,
+            "candidate_checkpoint_id": payload.candidate_checkpoint_id,
+            "promotion_threshold": payload.promotion_threshold,
+            "benchmark_manifest_count": len(payload.benchmark_manifests),
+            "promote": False,
+        },
+    )
+
+    assert first["eval_job"]["job_id"] != second["eval_job"]["job_id"]
+    assert second["eval_job"]["result"]["promotion_threshold"] == 0.25
+    assert calls["eval"] == 2
+
+
+
+def test_run_continuous_training_cycle_reports_promotion_when_eval_already_activates_checkpoint(tmp_path):
+    queue = OperatorJobQueue(tmp_path / "jobs.json")
+    settings = AdvisorSettings(
+        enabled=True,
+        trace_db_path=str(tmp_path / "advisor.db"),
+        event_log_path=str(tmp_path / "events.jsonl"),
+        retention_days=30,
+    )
+    lifecycle_manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+
+    def _train(payload):
+        checkpoint_path = tmp_path / payload.advisor_profile_id / "ckpt-active"
+        lifecycle_manager.register_checkpoint(
+            TrainingCheckpointRecord(
+                checkpoint_id="ckpt-active",
+                experiment_id=payload.experiment_id,
+                path=str(checkpoint_path),
+                status="candidate",
+                advisor_profile_id=payload.advisor_profile_id,
+            )
+        )
+        (checkpoint_path / "checkpoint.json").write_text(
+            json.dumps({"artifact_paths": {}, "checkpoint_id": "ckpt-active"}),
+            encoding="utf-8",
+        )
+        return {
+            "checkpoint_id": "ckpt-active",
+            "advisor_profile_id": payload.advisor_profile_id,
+        }
+
+    result = run_continuous_training_cycle(
+        queue,
+        experiment_id="exp-default-promotion",
+        advisor_profile_id="coding-default",
+        rollout_group={
+            "group_id": "group-default-promotion",
+            "advisor_profile_id": "coding-default",
+            "results": [],
+            "reward_values": [],
+            "summary": {},
+        },
+        benchmark_manifests=_benchmark_manifest_pair(baseline_score=0.4, advisor_score=0.7),
+        settings=settings,
+        lifecycle_manager=lifecycle_manager,
+        train_profile_fn=_train,
+    )
+
+    checkpoint = lifecycle_manager.get_checkpoint("ckpt-active")
+
+    assert checkpoint is not None
+    assert checkpoint.status == "active"
+    assert result["eval_job"]["result"]["promote"] is True
+    assert result["promote_job"]["result"]["status"] == "noop"
+    assert result["promoted"] is True
 
 
 

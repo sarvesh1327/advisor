@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -391,15 +392,16 @@ def run_continuous_training_cycle(
     promote_checkpoint_fn: Any | None = None,
 ) -> dict:
     cycle_key = f"continuous:{experiment_id}:{advisor_profile_id}"
+    train_payload = TrainProfileJobPayload(
+        experiment_id=experiment_id,
+        advisor_profile_id=advisor_profile_id,
+        rollout_group=rollout_group,
+        benchmark_manifests=benchmark_manifests,
+    ).model_dump()
     train_job = _enqueue_or_reuse_job(
         queue,
         job_type="train-profile",
-        payload=TrainProfileJobPayload(
-            experiment_id=experiment_id,
-            advisor_profile_id=advisor_profile_id,
-            rollout_group=rollout_group,
-            benchmark_manifests=benchmark_manifests,
-        ).model_dump(),
+        payload=train_payload,
         resume_token=f"{cycle_key}:train",
     )
     train_record = run_operator_job(
@@ -416,16 +418,17 @@ def run_continuous_training_cycle(
     if not checkpoint_id:
         raise ValueError("train-profile cycle result must include checkpoint_id")
 
+    eval_payload = EvalProfileJobPayload(
+        advisor_profile_id=advisor_profile_id,
+        candidate_checkpoint_id=checkpoint_id,
+        benchmark_manifests=benchmark_manifests,
+        promotion_threshold=promotion_threshold,
+    ).model_dump()
     eval_job = _enqueue_or_reuse_job(
         queue,
         job_type="eval-profile",
-        payload=EvalProfileJobPayload(
-            advisor_profile_id=advisor_profile_id,
-            candidate_checkpoint_id=checkpoint_id,
-            benchmark_manifests=benchmark_manifests,
-            promotion_threshold=promotion_threshold,
-        ).model_dump(),
-        resume_token=f"{cycle_key}:eval:{checkpoint_id}",
+        payload=eval_payload,
+        resume_token=f"{cycle_key}:eval:{_payload_fingerprint(eval_payload)}",
     )
     eval_record = run_operator_job(
         queue,
@@ -441,15 +444,16 @@ def run_continuous_training_cycle(
     promote_record = None
     promoted = False
     if eval_record.result.get("promote") is True:
+        promote_payload = PromoteCheckpointJobPayload(
+            advisor_profile_id=advisor_profile_id,
+            candidate_checkpoint_id=checkpoint_id,
+            evaluation=eval_record.result,
+        ).model_dump()
         promote_job = _enqueue_or_reuse_job(
             queue,
             job_type="promote-checkpoint",
-            payload=PromoteCheckpointJobPayload(
-                advisor_profile_id=advisor_profile_id,
-                candidate_checkpoint_id=checkpoint_id,
-                evaluation=eval_record.result,
-            ).model_dump(),
-            resume_token=f"{cycle_key}:promote:{checkpoint_id}",
+            payload=promote_payload,
+            resume_token=f"{cycle_key}:promote:{_payload_fingerprint(promote_payload)}",
         )
         promote_record = run_operator_job(
             queue,
@@ -461,7 +465,9 @@ def run_continuous_training_cycle(
             eval_profile_fn=eval_profile_fn,
             promote_checkpoint_fn=promote_checkpoint_fn,
         )
-        promoted = bool(promote_record.result.get("promoted"))
+        promoted = True
+        if promote_record.result.get("status") != "noop":
+            promoted = bool(promote_record.result.get("promoted", promoted))
 
     return ContinuousTrainingCycleResult(
         train_job=train_record.model_dump(),
@@ -596,6 +602,12 @@ def _enqueue_or_reuse_job(
         if item.job_type == job_type and item.resume_token == resume_token:
             return item
     return queue.enqueue_job(job_type=job_type, payload=payload, resume_token=resume_token)
+
+
+# Stable payload fingerprints keep resume tokens tied to the actual eval/promotion inputs.
+def _payload_fingerprint(payload: dict) -> str:
+    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 
 def _get_job(queue: OperatorJobQueue, job_id: str) -> OperatorJobRecord:
