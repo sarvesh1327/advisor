@@ -189,6 +189,54 @@ def test_trace_store_records_reward_labels(tmp_path):
     assert row["reward_label"]["example_type"] == "positive"
 
 
+def test_trace_store_roundtrips_profile_aware_reward_metadata(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    packet = _packet("run-profile-reward")
+    advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
+    outcome = AdvisorOutcome(
+        run_id="run-profile-reward",
+        status="success",
+        files_touched=["main.py"],
+        retries=1,
+        tests_run=["pytest -q"],
+        review_verdict="pass",
+    )
+
+    store.record_task_run(
+        packet,
+        advice,
+        advisor_model="advisor-test",
+        advisor_profile_id=DEFAULT_PROFILE_ID,
+        latency_ms=10,
+        prompt_hash="profile-reward",
+    )
+    store.record_outcome(outcome)
+    store.record_reward_label(
+        {
+            "run_id": "run-profile-reward",
+            "advisor_profile_id": DEFAULT_PROFILE_ID,
+            "reward_profile_id": "coding_swe_efficiency",
+            "reward_formula": "coding_swe_efficiency",
+            "reward_version": "coding-swe-efficiency-v1",
+            "raw_reward": 0.875,
+            "total_reward": 0.875,
+            "quality_score": 0.875,
+            "reward_diagnostics": {"steps": 10, "max_steps": 40},
+            "dataset_split": "train",
+            "example_type": "positive",
+            "hard_case_bucket": None,
+            "notes": ["pass"],
+        }
+    )
+
+    row = store.get_run("run-profile-reward")
+    assert row is not None
+    assert row["reward_label"]["advisor_profile_id"] == DEFAULT_PROFILE_ID
+    assert row["reward_label"]["reward_profile_id"] == "coding_swe_efficiency"
+    assert row["reward_label"]["reward_formula"] == "coding_swe_efficiency"
+    assert row["reward_label"]["reward_diagnostics"]["steps"] == 10
+
+
 def test_trace_store_prefers_prior_failures_with_changed_file_overlap(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     repo_path = "/tmp/ui"

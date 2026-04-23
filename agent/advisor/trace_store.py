@@ -248,15 +248,16 @@ class AdvisorTraceStore:
                         (signature, now),
                     )
 
-    def record_reward_label(self, reward_label: RewardLabel) -> None:
+    def record_reward_label(self, reward_label: RewardLabel | dict) -> None:
         now = datetime.now(UTC).isoformat()
+        normalized = reward_label if isinstance(reward_label, RewardLabel) else RewardLabel.model_validate(reward_label)
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO reward_labels(run_id, reward_json, created_at)
                 VALUES (?, ?, ?)
                 """,
-                (reward_label.run_id, reward_label.model_dump_json(), now),
+                (normalized.run_id, normalized.model_dump_json(), now),
             )
 
     def record_lineage(self, run_id: str, manifest, lineage) -> None:

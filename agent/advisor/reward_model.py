@@ -49,13 +49,18 @@ def compute_reward_label(
     notes = _build_notes(outcome, constraint_violations)
     return RewardLabel(
         run_id=outcome.run_id,
-        components=components,
+        advisor_profile_id="legacy-default",
+        reward_profile_id="legacy-generic",
+        reward_formula="weighted_components",
+        reward_version="phase8-v1",
+        raw_reward=total_reward,
         total_reward=total_reward,
         quality_score=total_reward,
+        reward_diagnostics=components.model_dump(),
+        components=components,
         dataset_split=_assign_dataset_split(packet),
         example_type=_classify_example_type(outcome, total_reward),
         hard_case_bucket=_assign_hard_case_bucket(components, outcome, constraint_violations),
-        reward_version="phase8-v1",
         notes=notes,
     )
 
