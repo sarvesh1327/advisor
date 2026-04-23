@@ -108,6 +108,45 @@ def test_gateway_resolves_explicit_profile_override(tmp_path):
     assert stored["advisor_profile_id"] == "image-ui"
 
 
+class ProfileAwareStubRuntime(StubRuntime):
+    def generate_advice(self, packet, system_prompt=None, advisor_profile_id=None):
+        self.generate_calls.append(
+            {
+                "packet": packet,
+                "system_prompt": system_prompt,
+                "advisor_profile_id": advisor_profile_id,
+            }
+        )
+        return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect likely file"], confidence=0.7)
+
+
+
+def test_gateway_passes_resolved_profile_to_profile_aware_runtime(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("def main():\n    pass\n")
+    profiles_path = tmp_path / "profiles.toml"
+    _write_profiles_config(profiles_path)
+    runtime = ProfileAwareStubRuntime()
+    gateway = AdvisorGateway(
+        settings=AdvisorSettings(
+            enabled=True,
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profile_id="coding-default",
+            advisor_profiles_path=str(profiles_path),
+        ),
+        runtime=runtime,
+    )
+
+    gateway.task_run(
+        task_text="fix main entrypoint bug",
+        repo_path=str(repo),
+        advisor_profile_id="image-ui",
+    )
+
+    assert runtime.generate_calls[0]["advisor_profile_id"] == "image-ui"
+
+
 
 def test_gateway_respects_explicit_injection_policy_threshold(tmp_path):
     repo = tmp_path / "repo"

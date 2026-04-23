@@ -123,12 +123,14 @@ class AdvisorGateway:
         packet.repo["task_id"] = task_id
         started = time.perf_counter()
         generate_advice = self.runtime.generate_advice
-        # Older runtimes may not support prompt overrides yet; keep the interface backward-compatible.
-        supports_system_prompt = "system_prompt" in inspect.signature(generate_advice).parameters
-        if supports_system_prompt:
-            advice = generate_advice(packet, system_prompt=system_prompt)
-        else:
-            advice = generate_advice(packet)
+        # Older runtimes may not support prompt overrides or profile-aware loads yet; keep the interface backward-compatible.
+        signature = inspect.signature(generate_advice)
+        kwargs = {}
+        if "system_prompt" in signature.parameters:
+            kwargs["system_prompt"] = system_prompt
+        if "advisor_profile_id" in signature.parameters:
+            kwargs["advisor_profile_id"] = resolved_profile_id
+        advice = generate_advice(packet, **kwargs)
         latency_ms = int((time.perf_counter() - started) * 1000)
         safe_advice = self.validator.validate(advice)
         injected_rendered_advice = render_advice_for_user_context(safe_advice)

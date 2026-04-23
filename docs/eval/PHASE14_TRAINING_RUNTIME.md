@@ -31,6 +31,13 @@ The repo now provides:
   - compares candidate vs active checkpoint summaries for the same profile
   - promotes only on passing profile-local benchmark deltas
   - rolls back failed candidates with an explicit recorded reason
+- `resolve_active_profile_checkpoint_metadata()`
+  - resolves the active checkpoint manifest for one advisor profile
+  - returns the persisted artifact paths needed by runtime loading
+- `runtime_mlx.py`
+  - resolves the active profile checkpoint through the lifecycle registry
+  - loads MLX with the promoted adapter directory when one is active
+  - fails clearly if an active checkpoint is missing its real adapter artifact
 - `training_rollouts.py`
   - defines single-rollout and grouped-rollout contracts
   - supports both single-turn and multi-turn rollout payloads
@@ -63,6 +70,7 @@ Phase 14 plus the Phase D rollout extension now standardize this artifact layout
 - `artifacts/checkpoints/<profile_id>/<checkpoint_id>/checkpoint.json`
 
 This gives later real trainer backends a stable place to write outputs and consume rollout artifacts.
+The live MLX runtime now consumes the same artifact contract for promoted profile adapters instead of treating checkpoint state as metadata only.
 
 ## Promotion / rollback contract
 

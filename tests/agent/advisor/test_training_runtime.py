@@ -12,6 +12,7 @@ from agent.advisor.training_runtime import (
     TrainingJobConfig,
     TrainingJobResult,
     evaluate_trained_checkpoint,
+    resolve_active_profile_checkpoint_metadata,
     run_profile_training_job,
 )
 
@@ -146,6 +147,49 @@ def test_checkpoint_lifecycle_manager_persists_rollout_group_manifest(tmp_path):
     assert manifest["advisor_profile_id"] == "coding-default"
     assert manifest["rollout_count"] == 1
     assert manifest["reward_values"] == [0.9]
+
+
+
+def test_resolve_active_profile_checkpoint_metadata_returns_manifest_and_artifacts(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    checkpoint_dir = tmp_path / "artifacts" / "checkpoints" / "coding-default" / "coding-active"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "adapters.safetensors").write_bytes(b"adapter")
+    checkpoint_manifest_path = checkpoint_dir / "checkpoint.json"
+    checkpoint_manifest_path.write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "coding-active",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {
+                    "adapter_model": str(checkpoint_dir / "adapters.safetensors"),
+                    "adapter_config": str(checkpoint_dir / "adapter_config.json"),
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-active",
+            experiment_id="exp-14",
+            path=str(checkpoint_dir),
+            status="active",
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    metadata = resolve_active_profile_checkpoint_metadata(
+        advisor_profile_id="coding-default",
+        lifecycle_manager=manager,
+    )
+
+    assert metadata["checkpoint_id"] == "coding-active"
+    assert metadata["checkpoint_path"] == str(checkpoint_dir)
+    assert metadata["manifest_path"] == str(checkpoint_manifest_path)
+    assert metadata["artifact_paths"]["adapter_model"] == str(checkpoint_dir / "adapters.safetensors")
+
 
 
 def test_evaluate_trained_checkpoint_reports_promotion_decision_and_regression_signals():
