@@ -17,6 +17,7 @@ from .evaluation.benchmark import (
     compare_benchmark_arms,
     freeze_benchmark_suite,
 )
+from .evaluation.measurement import build_phase5_measurement_report
 from .evaluation.results_pass import (
     build_failure_taxonomy,
     build_phase16_results_report,
@@ -182,6 +183,7 @@ __all__ = [
     "build_deployment_profile",
     "build_failure_taxonomy",
     "build_operator_snapshot",
+    "build_phase5_measurement_report",
     "build_phase16_results_report",
     "compare_benchmark_arms",
     "create_gateway",
