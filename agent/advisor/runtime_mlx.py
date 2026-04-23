@@ -5,7 +5,9 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from hashlib import sha256
+from pathlib import Path
 
+from .profiles import AdvisorProfileRegistry
 from .schemas import AdviceBlock
 from .settings import AdvisorSettings
 
@@ -68,6 +70,41 @@ class MLXAdvisorRuntime:
         except RuntimeError:
             if not self.settings.enable_fallback_runtime:
                 raise
+
+    def resolve_profile_training_spec(
+        self,
+        profile_registry: AdvisorProfileRegistry,
+        profile_id: str | None = None,
+    ) -> dict:
+        # Resolve the profile-local training knobs without pretending training artifacts already exist.
+        profile = profile_registry.resolve(profile_id)
+        if profile.training is None:
+            raise ValueError(f"advisor profile {profile.profile_id} is missing training config")
+        training = profile.training
+        return {
+            "advisor_profile_id": profile.profile_id,
+            "backend": training.backend,
+            "base_model_name": training.base_model_name or self.settings.model_name,
+            "adapter_method": training.adapter_method,
+            "lora_rank": training.lora_rank,
+            "lora_alpha": training.lora_alpha,
+            "lora_dropout": training.lora_dropout,
+            "target_modules": list(training.target_modules),
+            "checkpoint_root": training.checkpoint_root,
+        }
+
+    def resolve_adapter_artifact(self, checkpoint_dir: str | Path) -> str:
+        # The runtime needs a real adapter file path before we can claim a promoted checkpoint is loadable.
+        root = Path(checkpoint_dir).expanduser()
+        candidates = (
+            root / "adapter_model.safetensors",
+            root / "adapter.safetensors",
+            root / "adapters.safetensors",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        raise FileNotFoundError(f"missing adapter artifact under checkpoint dir: {root}")
 
     def _ensure_loaded(self):
         if self._model is not None and self._tokenizer is not None:
