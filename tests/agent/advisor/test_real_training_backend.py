@@ -1,7 +1,9 @@
 import json
+from pathlib import Path
 
 from agent.advisor.profiles import AdvisorTrainingConfig
 from agent.advisor.training_backends import (
+    GRPOTrainingBackend,
     GRPOTrainingSample,
     TrainingBackendRunRequest,
     build_grpo_training_samples,
@@ -83,6 +85,46 @@ def _training_request() -> TrainingBackendRunRequest:
     )
 
 
+class RecordingTrainer:
+    def __init__(self):
+        self.calls = []
+
+    def train(self, request, checkpoint_dir, training_samples):
+        self.calls.append(
+            {
+                "checkpoint_dir": str(checkpoint_dir),
+                "sample_count": len(training_samples),
+                "rewards": [sample.reward for sample in training_samples],
+            }
+        )
+        adapter_path = checkpoint_dir / "adapters.safetensors"
+        adapter_path.write_bytes(b"trained-adapter")
+        config_path = checkpoint_dir / "adapter_config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "base_model_name": request.training_config.base_model_name,
+                    "adapter_method": request.training_config.adapter_method,
+                    "lora_rank": request.training_config.lora_rank,
+                    "target_modules": request.training_config.target_modules,
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "artifact_paths": {
+                "adapter_model": str(adapter_path),
+                "adapter_config": str(config_path),
+            },
+            "metrics": {
+                "train_loss": 0.2,
+                "optimizer_steps": 8,
+                "trained_examples": len(training_samples),
+            },
+        }
+
+
 
 def test_build_grpo_training_samples_is_deterministic():
     request = _training_request()
@@ -116,3 +158,46 @@ def test_build_grpo_training_samples_serialize_prompt_and_completion_for_advisor
     completion_payload = json.loads(sample.completion)
     assert prompt_payload["task_text"] == "repair main.py"
     assert completion_payload["recommended_plan"] == ["inspect main.py", "run pytest -q"]
+
+
+
+def test_grpo_training_backend_records_trainer_metrics_and_adapter_artifacts(tmp_path):
+    trainer = RecordingTrainer()
+    request = _training_request().model_copy(update={"output_dir": str(tmp_path / "artifacts")})
+
+    result = GRPOTrainingBackend(trainer=trainer).run(request)
+
+    adapter_path = Path(result.artifact_paths["adapter_model"])
+    config_path = Path(result.artifact_paths["adapter_config"])
+    checkpoint_manifest = json.loads(Path(result.artifact_paths["checkpoint_manifest"]).read_text(encoding="utf-8"))
+
+    assert trainer.calls[0]["sample_count"] == 2
+    assert trainer.calls[0]["rewards"] == [0.75, 0.5]
+    assert adapter_path.exists()
+    assert config_path.exists()
+    assert result.training_metrics["train_loss"] == 0.2
+    assert result.training_metrics["optimizer_steps"] == 8
+    assert checkpoint_manifest["artifact_paths"]["adapter_model"] == str(adapter_path)
+    assert checkpoint_manifest["artifact_paths"]["adapter_config"] == str(config_path)
+
+
+
+def test_grpo_training_backend_persists_lora_config_in_adapter_manifest(tmp_path):
+    trainer = RecordingTrainer()
+    request = _training_request().model_copy(update={"output_dir": str(tmp_path / "artifacts")})
+
+    result = GRPOTrainingBackend(trainer=trainer).run(request)
+
+    adapter_config = json.loads(Path(result.artifact_paths["adapter_config"]).read_text(encoding="utf-8"))
+
+    assert adapter_config["adapter_method"] == "lora"
+    assert adapter_config["lora_rank"] == 32
+    assert adapter_config["target_modules"] == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]

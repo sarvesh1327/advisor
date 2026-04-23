@@ -82,7 +82,13 @@ from .schemas import (
     AdvisorTaskRunResult,
 )
 from .settings import AdvisorSettings
-from .training_backends import GRPOTrainingBackend, TrainingBackendRunRequest, TrainingBackendRunResult
+from .training_backends import (
+    GRPOTrainingBackend,
+    MLXLoRATrainer,
+    TrainerRunArtifact,
+    TrainingBackendRunRequest,
+    TrainingBackendRunResult,
+)
 from .training_rollouts import (
     RolloutTurnRecord,
     TrainingRolloutGroupRequest,
@@ -141,6 +147,7 @@ __all__ = [
     "HumanReviewVerifier",
     "IntegrationRegistry",
     "LiveMetricsSnapshot",
+    "MLXLoRATrainer",
     "EvalProfileJobPayload",
     "OperatorJobQueue",
     "OperatorJobRecord",
@@ -149,6 +156,7 @@ __all__ = [
     "ProfileCheckpointEvaluation",
     "RetentionEnforcer",
     "TrainProfileJobPayload",
+    "TrainerRunArtifact",
     "RubricVerifier",
     "RubricTextVerifier",
     "RunEventLogger",

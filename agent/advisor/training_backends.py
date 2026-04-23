@@ -2,11 +2,31 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .profiles import AdvisorTrainingConfig
 from .training_rollouts import TrainingRolloutGroupResult
+
+try:
+    import mlx.optimizers as mlx_optim
+    from mlx_lm import load as mlx_lm_load
+    from mlx_lm.tuner import TrainingArgs as mlx_TrainingArgs
+    from mlx_lm.tuner import linear_to_lora_layers as mlx_linear_to_lora_layers
+    from mlx_lm.tuner import train as mlx_train
+    from mlx_lm.tuner.callbacks import TrainingCallback as MLXTrainingCallback
+    from mlx_lm.tuner.datasets import CompletionsDataset as MLXCompletionsDataset
+    from mlx_lm.utils import save_config as mlx_save_config
+except ImportError:
+    mlx_optim = None
+    mlx_lm_load = None
+    mlx_TrainingArgs = None
+    mlx_linear_to_lora_layers = None
+    mlx_train = None
+    MLXTrainingCallback = object
+    MLXCompletionsDataset = None
+    mlx_save_config = None
 
 
 class TrainingBackendRunRequest(BaseModel):
@@ -39,6 +59,135 @@ class GRPOTrainingSample(BaseModel):
     provenance: dict[str, str | int | None] = Field(default_factory=dict)
 
 
+class TrainerRunArtifact(BaseModel):
+    artifact_paths: dict[str, str] = Field(default_factory=dict)
+    metrics: dict[str, float | int | str] = Field(default_factory=dict)
+
+
+class _MLXTrainingReporter(MLXTrainingCallback):
+    def __init__(self):
+        self.last_train_info: dict[str, Any] = {}
+        self.last_val_info: dict[str, Any] = {}
+
+    def on_train_loss_report(self, train_info: dict):
+        self.last_train_info = dict(train_info)
+
+    def on_val_loss_report(self, val_info: dict):
+        self.last_val_info = dict(val_info)
+
+
+class MLXLoRATrainer:
+    def train(
+        self,
+        request: TrainingBackendRunRequest,
+        checkpoint_dir: Path,
+        training_samples: list[GRPOTrainingSample],
+    ) -> TrainerRunArtifact:
+        _ensure_mlx_training_dependencies()
+        if not training_samples:
+            raise ValueError("training backend requires at least one GRPO training sample")
+        if request.training_config.adapter_method != "lora":
+            raise ValueError(
+                f"unsupported adapter_method for MLX trainer: {request.training_config.adapter_method}"
+            )
+
+        base_model_name = request.training_config.base_model_name
+        if not base_model_name:
+            raise ValueError("base_model_name is required for real LoRA training")
+
+        model, tokenizer = mlx_lm_load(base_model_name)
+        if not hasattr(model, "layers"):
+            raise ValueError("loaded MLX model does not expose transformer layers for LoRA training")
+
+        model.freeze()
+        target_modules = list(request.training_config.target_modules)
+        lora_parameters = {
+            "rank": int(request.training_config.lora_rank or 0),
+            "scale": float(request.training_config.lora_alpha or request.training_config.lora_rank or 1),
+            "dropout": float(request.training_config.lora_dropout),
+            "keys": target_modules,
+        }
+        num_layers = len(model.layers)
+        mlx_linear_to_lora_layers(model, num_layers, lora_parameters)
+
+        dataset_rows = [
+            {"prompt": sample.prompt, "completion": sample.completion}
+            for sample in training_samples
+        ]
+        train_dataset = MLXCompletionsDataset(
+            data=dataset_rows,
+            tokenizer=tokenizer,
+            prompt_key="prompt",
+            completion_key="completion",
+            mask_prompt=True,
+        )
+
+        adapter_path = checkpoint_dir / "adapters.safetensors"
+        reporter = _MLXTrainingReporter()
+        batch_size = min(max(1, len(training_samples)), 4)
+        max_seq_length = max(
+            int(request.training_config.max_prompt_tokens + request.training_config.max_completion_tokens),
+            256,
+        )
+        training_args = mlx_TrainingArgs(
+            batch_size=batch_size,
+            iters=max(1, int(request.training_config.max_steps)),
+            steps_per_report=1,
+            steps_per_eval=max(2, int(request.training_config.max_steps) + 1),
+            steps_per_save=max(1, int(request.training_config.max_steps)),
+            max_seq_length=max_seq_length,
+            adapter_file=str(adapter_path),
+            grad_accumulation_steps=1,
+        )
+        optimizer = mlx_optim.Adam(learning_rate=1e-5)
+        mlx_train(
+            model=model,
+            optimizer=optimizer,
+            train_dataset=train_dataset,
+            val_dataset=None,
+            args=training_args,
+            training_callback=reporter,
+        )
+
+        adapter_config_path = checkpoint_dir / "adapter_config.json"
+        adapter_config = {
+            "fine_tune_type": "lora",
+            "num_layers": num_layers,
+            "lora_parameters": lora_parameters,
+            "base_model_name": base_model_name,
+            "adapter_method": request.training_config.adapter_method,
+            "lora_rank": request.training_config.lora_rank,
+            "lora_alpha": request.training_config.lora_alpha,
+            "lora_dropout": request.training_config.lora_dropout,
+            "target_modules": target_modules,
+            "advisor_profile_id": request.advisor_profile_id,
+            "job_id": request.job_id,
+            "experiment_id": request.experiment_id,
+        }
+        mlx_save_config(adapter_config, adapter_config_path)
+
+        train_metrics = {
+            "train_loss": round(float(reporter.last_train_info.get("train_loss", 0.0)), 6),
+            "optimizer_steps": int(reporter.last_train_info.get("iteration", 0)),
+            "trained_examples": len(training_samples),
+        }
+        if reporter.last_train_info.get("trained_tokens") is not None:
+            train_metrics["trained_tokens"] = int(reporter.last_train_info["trained_tokens"])
+        if reporter.last_train_info.get("tokens_per_second") is not None:
+            train_metrics["tokens_per_second"] = round(
+                float(reporter.last_train_info["tokens_per_second"]),
+                4,
+            )
+
+        return TrainerRunArtifact(
+            artifact_paths={
+                "adapter_model": str(adapter_path),
+                "adapter_config": str(adapter_config_path),
+            },
+            metrics=train_metrics,
+        )
+
+
 def build_grpo_training_samples(request: TrainingBackendRunRequest) -> list[GRPOTrainingSample]:
     # Keep sample construction deterministic so reward provenance is replayable across runs.
     samples: list[GRPOTrainingSample] = []
@@ -66,6 +215,9 @@ def build_grpo_training_samples(request: TrainingBackendRunRequest) -> list[GRPO
 class GRPOTrainingBackend:
     backend_name = "grpo"
 
+    def __init__(self, trainer: Any | None = None):
+        self.trainer = trainer or MLXLoRATrainer()
+
     def run(self, request: TrainingBackendRunRequest) -> TrainingBackendRunResult:
         output_root = Path(request.output_dir)
         job_dir = output_root / "training-jobs" / request.job_id
@@ -81,6 +233,9 @@ class GRPOTrainingBackend:
         reward_values = [float(value) for value in request.rollout_group.reward_values]
         rollout_count = request.rollout_group.rollout_count
         mean_reward = round(sum(reward_values) / rollout_count, 4) if reward_values else 0.0
+        trainer_result = _normalize_trainer_result(
+            self.trainer.train(request, checkpoint_dir, training_samples)
+        )
         training_metrics = {
             "mean_reward": mean_reward,
             "max_reward": max(reward_values) if reward_values else 0.0,
@@ -89,6 +244,7 @@ class GRPOTrainingBackend:
             "num_generations": request.training_config.num_generations,
             "max_steps": request.training_config.max_steps,
             "training_sample_count": len(training_samples),
+            **trainer_result.metrics,
         }
 
         checkpoint_manifest_path = checkpoint_dir / "checkpoint.json"
@@ -102,6 +258,7 @@ class GRPOTrainingBackend:
                     "backend_name": self.backend_name,
                     "training_metrics": training_metrics,
                     "rollout_summary": request.rollout_group.summary,
+                    "artifact_paths": trainer_result.artifact_paths,
                 },
                 indent=2,
                 sort_keys=True,
@@ -124,6 +281,7 @@ class GRPOTrainingBackend:
                     "rollout_summary": request.rollout_group.summary,
                     "training_metrics": training_metrics,
                     "training_sample_count": len(training_samples),
+                    "artifact_paths": trainer_result.artifact_paths,
                 },
                 indent=2,
                 sort_keys=True,
@@ -131,6 +289,11 @@ class GRPOTrainingBackend:
             encoding="utf-8",
         )
 
+        artifact_paths = {
+            "backend_manifest": str(backend_manifest_path),
+            "checkpoint_manifest": str(checkpoint_manifest_path),
+            **trainer_result.artifact_paths,
+        }
         return TrainingBackendRunResult(
             job_id=request.job_id,
             experiment_id=request.experiment_id,
@@ -139,10 +302,7 @@ class GRPOTrainingBackend:
             checkpoint_id=checkpoint_id,
             checkpoint_path=str(checkpoint_dir),
             training_metrics=training_metrics,
-            artifact_paths={
-                "backend_manifest": str(backend_manifest_path),
-                "checkpoint_manifest": str(checkpoint_manifest_path),
-            },
+            artifact_paths=artifact_paths,
             rollout_summary=request.rollout_group.summary,
         )
 
@@ -159,3 +319,24 @@ def _reward_total(reward_label: BaseModel | dict) -> float:
     if isinstance(reward_label, BaseModel):
         return float(reward_label.model_dump().get("total_reward", 0.0))
     return float(dict(reward_label).get("total_reward", 0.0))
+
+
+def _normalize_trainer_result(result: TrainerRunArtifact | dict) -> TrainerRunArtifact:
+    if isinstance(result, TrainerRunArtifact):
+        return result
+    return TrainerRunArtifact.model_validate(result)
+
+
+def _ensure_mlx_training_dependencies() -> None:
+    if (
+        mlx_optim is None
+        or mlx_lm_load is None
+        or mlx_TrainingArgs is None
+        or mlx_linear_to_lora_layers is None
+        or mlx_train is None
+        or MLXCompletionsDataset is None
+        or mlx_save_config is None
+    ):
+        raise RuntimeError(
+            "mlx-lm training dependencies are unavailable; install advisor runtime extras to enable real LoRA training"
+        )

@@ -4,6 +4,7 @@ from pathlib import Path
 from agent.advisor import ProfileCheckpointEvaluation, evaluate_profile_checkpoint_for_promotion
 from agent.advisor.benchmark import BenchmarkRunManifest
 from agent.advisor.profiles import AdvisorProfileRegistry
+from agent.advisor.training_backends import GRPOTrainingBackend
 from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
 from agent.advisor.training_runtime import (
     CheckpointLifecycleManager,
@@ -28,6 +29,36 @@ def _benchmark_manifest(run_id: str, arm: str = "advisor", overall_score: float 
         reward_version="phase8-v1",
         score={"overall_score": overall_score, "focus_target_recall": overall_score},
     )
+
+
+class StubTrainer:
+    def train(self, request, checkpoint_dir, training_samples):
+        adapter_path = checkpoint_dir / "adapters.safetensors"
+        adapter_path.write_bytes(b"stub-adapter")
+        config_path = checkpoint_dir / "adapter_config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "base_model_name": request.training_config.base_model_name,
+                    "adapter_method": request.training_config.adapter_method,
+                    "lora_rank": request.training_config.lora_rank,
+                    "target_modules": request.training_config.target_modules,
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "artifact_paths": {
+                "adapter_model": str(adapter_path),
+                "adapter_config": str(config_path),
+            },
+            "metrics": {
+                "train_loss": 0.11,
+                "optimizer_steps": 3,
+                "trained_examples": len(training_samples),
+            },
+        }
 
 
 def test_checkpoint_lifecycle_manager_registers_promotes_and_rolls_back(tmp_path):
@@ -168,6 +199,7 @@ def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(
         rollout_group=rollout_group,
         profile_registry=registry,
         lifecycle_manager=manager,
+        backend=GRPOTrainingBackend(trainer=StubTrainer()),
     )
 
     manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
@@ -178,6 +210,8 @@ def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(
     assert manifest["advisor_profile_id"] == "coding-default"
     assert manifest["backend_name"] == "grpo"
     assert manifest["rollout_group_id"] == "group-train"
+    assert manifest["backend_artifact_paths"]["adapter_model"].endswith("adapters.safetensors")
+    assert manifest["backend_artifact_paths"]["adapter_config"].endswith("adapter_config.json")
     assert checkpoint_registry[0]["advisor_profile_id"] == "coding-default"
     assert checkpoint_registry[0]["status"] == "candidate"
     assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
