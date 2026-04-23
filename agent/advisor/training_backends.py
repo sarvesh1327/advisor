@@ -31,6 +31,38 @@ class TrainingBackendRunResult(BaseModel):
     rollout_summary: dict = Field(default_factory=dict)
 
 
+class GRPOTrainingSample(BaseModel):
+    prompt: str
+    completion: str
+    reward: float
+    profile_id: str
+    provenance: dict[str, str | int | None] = Field(default_factory=dict)
+
+
+def build_grpo_training_samples(request: TrainingBackendRunRequest) -> list[GRPOTrainingSample]:
+    # Keep sample construction deterministic so reward provenance is replayable across runs.
+    samples: list[GRPOTrainingSample] = []
+    for sample_index, result in enumerate(request.rollout_group.results):
+        packet_payload = _normalized_payload(result.packet)
+        advice_payload = _normalized_payload(result.primary_advice)
+        samples.append(
+            GRPOTrainingSample(
+                prompt=json.dumps(packet_payload, sort_keys=True),
+                completion=json.dumps(advice_payload, sort_keys=True),
+                reward=float(_reward_total(result.reward_label)),
+                profile_id=request.advisor_profile_id,
+                provenance={
+                    "job_id": request.job_id,
+                    "group_id": request.rollout_group.group_id,
+                    "rollout_id": result.rollout_id,
+                    "advisor_profile_id": result.advisor_profile_id,
+                    "sample_index": sample_index,
+                },
+            )
+        )
+    return samples
+
+
 class GRPOTrainingBackend:
     backend_name = "grpo"
 
@@ -45,6 +77,7 @@ class GRPOTrainingBackend:
         checkpoint_dir = checkpoint_dir / checkpoint_id
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        training_samples = build_grpo_training_samples(request)
         reward_values = [float(value) for value in request.rollout_group.reward_values]
         rollout_count = request.rollout_group.rollout_count
         mean_reward = round(sum(reward_values) / rollout_count, 4) if reward_values else 0.0
@@ -55,6 +88,7 @@ class GRPOTrainingBackend:
             "rollout_count": rollout_count,
             "num_generations": request.training_config.num_generations,
             "max_steps": request.training_config.max_steps,
+            "training_sample_count": len(training_samples),
         }
 
         checkpoint_manifest_path = checkpoint_dir / "checkpoint.json"
@@ -89,6 +123,7 @@ class GRPOTrainingBackend:
                     "rollout_group_id": request.rollout_group.group_id,
                     "rollout_summary": request.rollout_group.summary,
                     "training_metrics": training_metrics,
+                    "training_sample_count": len(training_samples),
                 },
                 indent=2,
                 sort_keys=True,
@@ -110,3 +145,17 @@ class GRPOTrainingBackend:
             },
             rollout_summary=request.rollout_group.summary,
         )
+
+
+def _normalized_payload(payload: BaseModel | dict) -> dict:
+    # Normalize Pydantic models and dicts into a stable JSON shape before sample serialization.
+    if isinstance(payload, BaseModel):
+        return payload.model_dump()
+    return dict(payload)
+
+
+def _reward_total(reward_label: BaseModel | dict) -> float:
+    # Reward labels can still arrive as plain dicts in tests and persisted artifact paths.
+    if isinstance(reward_label, BaseModel):
+        return float(reward_label.model_dump().get("total_reward", 0.0))
+    return float(dict(reward_label).get("total_reward", 0.0))
