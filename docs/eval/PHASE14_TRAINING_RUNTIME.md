@@ -44,6 +44,10 @@ The repo now provides:
   - runs the GRPO backend
   - registers a candidate checkpoint owned by the advisor profile
   - persists a profile-local training manifest with backend metadata
+- `operator_runtime.py`
+  - validates typed queued job payloads for `train-profile`, `eval-profile`, and `promote-checkpoint`
+  - executes one queued operator job deterministically through the Phase E/F runtime surfaces
+  - preserves resume-safe queue semantics and structured result/error persistence
 
 ## Artifact contract
 
@@ -103,3 +107,4 @@ Phase 15 can now build on:
 - persisted training manifests
 - persisted rollout-group manifests
 - explicit promotion / rollback decisions derived from profile-local benchmark summaries
+- typed queued operator jobs for train/eval/promote lifecycle steps
