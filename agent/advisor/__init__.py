@@ -49,6 +49,7 @@ from .execution.orchestration import (
     ScreenshotComparisonVerifier,
 )
 from .operators.operator_runtime import (
+    ContinuousTrainingCycleResult,
     DeploymentProfile,
     EvalProfileJobPayload,
     OperatorJobQueue,
@@ -59,6 +60,7 @@ from .operators.operator_runtime import (
     TrainProfileJobPayload,
     build_deployment_profile,
     build_operator_snapshot,
+    run_continuous_training_cycle,
     run_operator_job,
 )
 from .product.api import create_gateway, create_http_app, create_orchestrator, get_version, run_task
@@ -136,6 +138,7 @@ __all__ = [
     "CheckpointLifecycleManager",
     "CodingAgentExecutor",
     "CodingAgentSubprocessExecutor",
+    "ContinuousTrainingCycleResult",
     "DeploymentHardeningProfile",
     "DeploymentProfile",
     "DeterministicABRouter",
@@ -196,6 +199,7 @@ __all__ = [
     "lock_truth_surface_contract",
     "redact_packet",
     "resolve_active_profile_checkpoint_metadata",
+    "run_continuous_training_cycle",
     "run_operator_job",
     "run_profile_training_job",
     "run_task",
