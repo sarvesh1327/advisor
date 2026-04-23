@@ -80,6 +80,33 @@ def test_export_training_examples_can_filter_to_one_profile(tmp_path):
 
 
 
+def test_export_training_examples_keeps_cross_profile_duplicates_separate(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    for run_id, profile_id in (("run-coding", "coding-default"), ("run-ui", "image-ui")):
+        packet = _packet(run_id)
+        advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
+        outcome = AdvisorOutcome(run_id=run_id, status="success", files_touched=["main.py"], retries=0, tests_run=["pytest -q"], review_verdict="pass")
+        store.record_task_run(packet, advice, advisor_model="advisor-test", advisor_profile_id=profile_id, latency_ms=10, prompt_hash=run_id)
+        store.record_outcome(outcome)
+        store.record_reward_label(
+            {
+                **compute_reward_label(packet, advice, outcome, human_rating=5.0).model_dump(),
+                "run_id": run_id,
+                "advisor_profile_id": profile_id,
+                "reward_profile_id": "coding_swe_efficiency" if profile_id == "coding-default" else "ui_from_text_layout",
+                "reward_formula": "coding_swe_efficiency" if profile_id == "coding-default" else "ui_from_text_layout",
+            }
+        )
+
+    out = tmp_path / "all-profiles.jsonl"
+    count = export_training_examples(store, out)
+
+    rows = [json.loads(line) for line in out.read_text().strip().splitlines()]
+    assert count == 2
+    assert {row["advisor_profile_id"] for row in rows} == {"coding-default", "image-ui"}
+
+
+
 def test_export_training_examples_filters_low_quality_and_keeps_negative_examples(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
 

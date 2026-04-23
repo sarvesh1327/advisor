@@ -77,6 +77,7 @@ def _example_signature(payload: dict) -> str:
     focus_targets = sorted(item.get("locator") for item in target_advice.get("focus_targets") or [] if item.get("locator"))
     return json.dumps(
         {
+            "advisor_profile_id": payload.get("advisor_profile_id"),
             "task_text": input_payload.get("task_text"),
             "repo_path": input_payload.get("repo", {}).get("path"),
             "task_type": input_payload.get("task_type"),

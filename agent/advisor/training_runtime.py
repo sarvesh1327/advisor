@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .training_rollouts import TrainingRolloutGroupResult
+
 
 class TrainingJobConfig(BaseModel):
     experiment_id: str
@@ -93,6 +95,28 @@ class CheckpointLifecycleManager:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
         return result.model_copy(update={"manifest_path": str(manifest_path), "artifact_dir": str(artifact_dir)})
+
+    def record_rollout_group(self, group: TrainingRolloutGroupResult, *, job_id: str) -> str:
+        artifact_dir = self.artifacts_root / "training-jobs" / job_id
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = artifact_dir / "rollout-group.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "job_id": job_id,
+                    "group_id": group.group_id,
+                    "advisor_profile_id": group.advisor_profile_id,
+                    "rollout_count": group.rollout_count,
+                    "reward_values": group.reward_values,
+                    "summary": group.summary,
+                    "results": [result.model_dump() for result in group.results],
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return str(manifest_path)
 
     def _load_registry(self) -> list[dict]:
         if not self.registry_path.exists():
