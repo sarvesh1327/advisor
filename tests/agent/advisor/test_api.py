@@ -1,6 +1,6 @@
 from agent.advisor import create_gateway, create_http_app, get_version, run_task
-from agent.advisor.schemas import AdviceBlock
-from agent.advisor.settings import AdvisorSettings
+from agent.advisor.core.schemas import AdviceBlock
+from agent.advisor.core.settings import AdvisorSettings
 
 
 class StubRuntime:

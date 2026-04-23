@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 
-from agent.advisor.labeling import export_training_examples
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.storage.labeling import export_training_examples
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def main() -> None:

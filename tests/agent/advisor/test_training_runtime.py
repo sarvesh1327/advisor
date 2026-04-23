@@ -2,11 +2,11 @@ import json
 from pathlib import Path
 
 from agent.advisor import ProfileCheckpointEvaluation, evaluate_profile_checkpoint_for_promotion
-from agent.advisor.benchmark import BenchmarkRunManifest
+from agent.advisor.evaluation.benchmark import BenchmarkRunManifest
 from agent.advisor.profiles import AdvisorProfileRegistry
-from agent.advisor.training_backends import GRPOTrainingBackend
-from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
-from agent.advisor.training_runtime import (
+from agent.advisor.training.training_backends import GRPOTrainingBackend
+from agent.advisor.training.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
+from agent.advisor.training.training_runtime import (
     CheckpointLifecycleManager,
     TrainingCheckpointRecord,
     TrainingJobConfig,

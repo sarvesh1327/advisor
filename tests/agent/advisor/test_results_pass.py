@@ -1,9 +1,9 @@
 import json
 
-from agent.advisor.api import create_orchestrator
-from agent.advisor.benchmark import BenchmarkRunManifest
-from agent.advisor.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
-from agent.advisor.results_pass import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.evaluation.benchmark import BenchmarkRunManifest
+from agent.advisor.evaluation.results_pass import (
     build_failure_taxonomy,
     build_phase16_results_report,
     default_paper_divergences,
@@ -13,9 +13,9 @@ from agent.advisor.results_pass import (
     summarize_transfer_results,
     write_phase16_results_report,
 )
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.execution.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
+from agent.advisor.product.api import create_orchestrator
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 class StubRuntime:

@@ -4,8 +4,9 @@ import sys
 import textwrap
 import time
 
-from agent.advisor.api import create_orchestrator
-from agent.advisor.integrations import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.execution.integrations import (
     BuildTestCommandVerifier,
     CodingAgentSubprocessExecutor,
     DomainWorkerSubprocessExecutor,
@@ -15,10 +16,9 @@ from agent.advisor.integrations import (
     RubricTextVerifier,
     ScreenshotHashVerifier,
 )
-from agent.advisor.orchestration import DeterministicABRouter
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.execution.orchestration import DeterministicABRouter
+from agent.advisor.product.api import create_orchestrator
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 class StubRuntime:

@@ -1,15 +1,15 @@
 import json
 
-from agent.advisor.labeling import export_training_examples
-from agent.advisor.reward_model import compute_reward_label
-from agent.advisor.schemas import (
+from agent.advisor.core.schemas import (
     AdviceBlock,
     AdvisorInputPacket,
     AdvisorOutcome,
     CandidateFile,
     RepoSummary,
 )
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.rewards.reward_model import compute_reward_label
+from agent.advisor.storage.labeling import export_training_examples
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 def _packet(run_id: str):

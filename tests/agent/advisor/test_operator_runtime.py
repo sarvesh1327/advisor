@@ -2,9 +2,11 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 
-from agent.advisor.api import create_orchestrator
-from agent.advisor.benchmark import BenchmarkRunManifest
-from agent.advisor.operator_runtime import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.evaluation.benchmark import BenchmarkRunManifest
+from agent.advisor.execution.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
+from agent.advisor.operators.operator_runtime import (
     EvalProfileJobPayload,
     OperatorJobQueue,
     PromoteCheckpointJobPayload,
@@ -14,10 +16,8 @@ from agent.advisor.operator_runtime import (
     build_operator_snapshot,
     run_operator_job,
 )
-from agent.advisor.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.product.api import create_orchestrator
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 class StubRuntime:

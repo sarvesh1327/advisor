@@ -1,4 +1,6 @@
-from agent.advisor.orchestration import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.settings import AdvisorSettings
+from agent.advisor.execution.orchestration import (
     AdvisorOrchestrator,
     BuildTestVerifier,
     DeterministicABRouter,
@@ -8,9 +10,7 @@ from agent.advisor.orchestration import (
     RubricVerifier,
     VerifierResult,
 )
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.settings import AdvisorSettings
-from agent.advisor.trace_store import AdvisorTraceStore
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
 class StubRuntime:

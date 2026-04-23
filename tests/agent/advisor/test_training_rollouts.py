@@ -1,7 +1,7 @@
-from agent.advisor.orchestration import BuildTestVerifier, ExecutorRunResult, FrontierChatExecutor, VerifierResult
-from agent.advisor.reward_registry import RewardRegistry
-from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.training_rollouts import (
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.execution.orchestration import BuildTestVerifier, ExecutorRunResult, FrontierChatExecutor, VerifierResult
+from agent.advisor.rewards.reward_registry import RewardRegistry
+from agent.advisor.training.training_rollouts import (
     RolloutTurnRecord,
     TrainingRolloutGroupRequest,
     TrainingRolloutRequest,

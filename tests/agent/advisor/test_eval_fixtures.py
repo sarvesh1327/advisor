@@ -1,6 +1,6 @@
 import json
 
-from agent.advisor.eval_fixtures import EvalFixture, load_eval_fixture
+from agent.advisor.evaluation.eval_fixtures import EvalFixture, load_eval_fixture
 
 
 def test_load_eval_fixture_roundtrip(tmp_path):

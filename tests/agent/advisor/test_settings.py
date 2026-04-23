@@ -2,12 +2,12 @@ import textwrap
 
 import pytest
 
-from agent.advisor.reward_model import RewardWeights
-from agent.advisor.settings import (
+from agent.advisor.core.settings import (
     AdvisorSettings,
     get_default_advisor_home,
     get_default_profiles_path,
 )
+from agent.advisor.rewards.reward_model import RewardWeights
 
 
 def test_get_default_advisor_home_prefers_explicit_env(monkeypatch, tmp_path):
