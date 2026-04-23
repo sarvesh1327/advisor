@@ -78,6 +78,15 @@ from .schemas import (
     AdvisorTaskRunResult,
 )
 from .settings import AdvisorSettings
+from .training_rollouts import (
+    RolloutTurnRecord,
+    TrainingRolloutGroupRequest,
+    TrainingRolloutGroupResult,
+    TrainingRolloutRequest,
+    TrainingRolloutResult,
+    execute_training_rollout,
+    execute_training_rollout_group,
+)
 from .training_runtime import (
     CheckpointLifecycleManager,
     TrainingCheckpointRecord,
@@ -134,6 +143,10 @@ __all__ = [
     "TrainingCheckpointRecord",
     "TrainingJobConfig",
     "TrainingJobResult",
+    "TrainingRolloutGroupRequest",
+    "TrainingRolloutGroupResult",
+    "TrainingRolloutRequest",
+    "TrainingRolloutResult",
     "build_alert_summary",
     "build_audit_report",
     "build_benchmark_run_manifest",
@@ -162,4 +175,7 @@ __all__ = [
     "summarize_provenance_coverage",
     "summarize_transfer_results",
     "write_phase16_results_report",
+    "RolloutTurnRecord",
+    "execute_training_rollout",
+    "execute_training_rollout_group",
 ]

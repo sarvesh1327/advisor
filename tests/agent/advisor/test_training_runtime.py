@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from agent.advisor.benchmark import BenchmarkRunManifest
+from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
 from agent.advisor.training_runtime import (
     CheckpointLifecycleManager,
     TrainingCheckpointRecord,
@@ -79,6 +80,38 @@ def test_training_job_result_persists_manifest_and_artifacts(tmp_path):
     assert manifest["experiment_id"] == "exp-14"
     assert manifest["training_mode"] == "supervised"
     assert manifest["dataset_manifest"]["examples"][0]["run_id"] == "run-a"
+
+
+def test_checkpoint_lifecycle_manager_persists_rollout_group_manifest(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    group = TrainingRolloutGroupResult(
+        group_id="group-1",
+        advisor_profile_id="coding-default",
+        results=[
+            TrainingRolloutResult(
+                rollout_id="rollout-1",
+                advisor_profile_id="coding-default",
+                packet={"run_id": "run-1"},
+                primary_advice={"recommended_plan": ["inspect main.py"]},
+                executor_result={"status": "success"},
+                verifier_results=[],
+                outcome={"status": "success"},
+                reward_label={"total_reward": 0.9},
+                diagnostics={"multi_turn": False},
+            )
+        ],
+        reward_values=[0.9],
+        summary={"mean_reward": 0.9},
+    )
+
+    manifest_path = Path(manager.record_rollout_group(group, job_id="job-rollout"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest_path.exists()
+    assert manifest["group_id"] == "group-1"
+    assert manifest["advisor_profile_id"] == "coding-default"
+    assert manifest["rollout_count"] == 1
+    assert manifest["reward_values"] == [0.9]
 
 
 def test_evaluate_trained_checkpoint_reports_promotion_decision_and_regression_signals():
