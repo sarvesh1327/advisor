@@ -87,6 +87,7 @@ class OperatorJobQueue:
     def __init__(self, state_path: str | Path):
         self.state_path = Path(state_path).expanduser()
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.control_path = self.state_path.parent / "control.json"
 
     def enqueue_job(
         self,
@@ -96,6 +97,9 @@ class OperatorJobQueue:
         job_id: str | None = None,
         resume_token: str | None = None,
     ) -> OperatorJobRecord:
+        queue_state = self.queue_status()
+        if queue_state["paused"]:
+            raise ValueError(f"operator queue is paused: {queue_state['reason']}")
         validated_payload = _validate_operator_job_payload(job_type, payload)
         now = _utc_now().isoformat()
         record = OperatorJobRecord(
@@ -167,6 +171,33 @@ class OperatorJobQueue:
                 updated.append(item)
         self._write_jobs(updated)
         return resumed
+
+    def queue_status(self) -> dict:
+        if not self.control_path.exists():
+            return {
+                "paused": False,
+                "reason": None,
+                "updated_at": None,
+            }
+        return json.loads(self.control_path.read_text(encoding="utf-8"))
+
+    def pause(self, *, reason: str | None = None) -> dict:
+        payload = {
+            "paused": True,
+            "reason": reason or "paused by operator",
+            "updated_at": _utc_now().isoformat(),
+        }
+        self.control_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        return payload
+
+    def resume_queue(self) -> dict:
+        payload = {
+            "paused": False,
+            "reason": None,
+            "updated_at": _utc_now().isoformat(),
+        }
+        self.control_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        return payload
 
     def _write_jobs(self, records: list[OperatorJobRecord]) -> None:
         self.state_path.write_text(
@@ -292,6 +323,7 @@ def build_operator_snapshot(
     metrics = export_live_metrics(store)
     benchmark_summary = compare_benchmark_arms(benchmark_manifests or []) if benchmark_manifests else {}
     normalized_jobs = [item.model_dump() if isinstance(item, OperatorJobRecord) else item for item in (job_records or [])]
+    queue_state = OperatorJobQueue(Path(settings.trace_db_path).expanduser().parent / "operator" / "jobs.json").queue_status()
     run_summaries = []
     for row in runs:
         lineage = store.get_lineage(row["run_id"])
@@ -320,11 +352,60 @@ def build_operator_snapshot(
         "runs": run_summaries,
         "benchmark_summary": benchmark_summary,
         "jobs": normalized_jobs,
+        "queue": queue_state,
         "retention": {
             "retention_days": settings.retention_days,
             "archive_root": str(Path(settings.trace_db_path).expanduser().parent / "archive"),
         },
     }
+
+
+# Phase 7 operator controls need direct checkpoint inspection over the registry, not only trend reports.
+def inspect_profile_checkpoints(
+    lifecycle_manager: CheckpointLifecycleManager,
+    *,
+    advisor_profile_id: str,
+) -> list[dict]:
+    records = lifecycle_manager.list_checkpoints(advisor_profile_id=advisor_profile_id)
+    checkpoints = []
+    for record in records:
+        manifest_path = Path(record.path).expanduser() / "checkpoint.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+        checkpoints.append(
+            {
+                "checkpoint_id": record.checkpoint_id,
+                "advisor_profile_id": record.advisor_profile_id,
+                "experiment_id": record.experiment_id,
+                "status": record.status,
+                "path": record.path,
+                "rollback_reason": record.rollback_reason,
+                "benchmark_summary": record.benchmark_summary,
+                "artifact_paths": dict(manifest.get("artifact_paths") or {}),
+            }
+        )
+    return checkpoints
+
+
+# Forced eval enqueueing should stay deterministic and operator-friendly.
+def enqueue_forced_profile_eval(
+    queue: OperatorJobQueue,
+    *,
+    advisor_profile_id: str,
+    candidate_checkpoint_id: str,
+    benchmark_manifests: list[dict],
+    promotion_threshold: float = 0.05,
+    resume_token: str | None = None,
+) -> OperatorJobRecord:
+    payload = EvalProfileJobPayload(
+        advisor_profile_id=advisor_profile_id,
+        candidate_checkpoint_id=candidate_checkpoint_id,
+        benchmark_manifests=benchmark_manifests,
+        promotion_threshold=promotion_threshold,
+    ).model_dump()
+    resolved_resume_token = resume_token or (
+        f"forced-eval:{advisor_profile_id}:{candidate_checkpoint_id}:{_payload_fingerprint(payload)}"
+    )
+    return queue.enqueue_job(job_type="eval-profile", payload=payload, resume_token=resolved_resume_token)
 
 
 def run_operator_job(
@@ -341,6 +422,9 @@ def run_operator_job(
     existing = _get_job(queue, job_id)
     if existing.status == "completed":
         return existing
+    queue_state = queue.queue_status()
+    if queue_state["paused"]:
+        raise ValueError(f"operator queue is paused: {queue_state['reason']}")
 
     queue.update_job(job_id, status="running")
     active = _get_job(queue, job_id)

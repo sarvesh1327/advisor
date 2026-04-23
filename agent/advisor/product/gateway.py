@@ -19,11 +19,14 @@ from agent.advisor.operators.operator_runtime import (
     RetentionEnforcer,
     build_deployment_profile,
     build_operator_snapshot,
+    enqueue_forced_profile_eval,
+    inspect_profile_checkpoints,
     run_operator_job,
 )
 from agent.advisor.profiles import AdvisorProfile, AdvisorProfileRegistry
 from agent.advisor.runtime.runtime_mlx import MLXAdvisorRuntime
 from agent.advisor.storage.trace_store import AdvisorTraceStore
+from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 try:
     from fastapi import FastAPI
@@ -170,6 +173,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     gateway = AdvisorGateway(settings=settings, runtime=runtime)
     active_settings = gateway.settings
     operator_queue = OperatorJobQueue(Path(active_settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
+    lifecycle_manager = CheckpointLifecycleManager(Path(active_settings.trace_db_path).expanduser().parent / "artifacts")
     deployment = build_deployment_profile(
         settings=active_settings,
         mode="hosted" if active_settings.hosted_mode else "single_tenant",
@@ -217,6 +221,32 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     @app.get("/v1/operator/jobs")
     def operator_jobs():
         return [item.model_dump() for item in operator_queue.list_jobs()]
+
+    @app.get("/v1/operator/queue")
+    def operator_queue_status():
+        return operator_queue.queue_status()
+
+    @app.post("/v1/operator/queue/pause")
+    def operator_queue_pause(reason: str | None = None):
+        return operator_queue.pause(reason=reason)
+
+    @app.post("/v1/operator/queue/resume")
+    def operator_queue_resume():
+        return operator_queue.resume_queue()
+
+    @app.get("/v1/operator/checkpoints/{advisor_profile_id}")
+    def operator_profile_checkpoints(advisor_profile_id: str):
+        return inspect_profile_checkpoints(lifecycle_manager, advisor_profile_id=advisor_profile_id)
+
+    @app.post("/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval")
+    def operator_force_profile_eval(advisor_profile_id: str, checkpoint_id: str, promotion_threshold: float = 0.05):
+        return enqueue_forced_profile_eval(
+            operator_queue,
+            advisor_profile_id=advisor_profile_id,
+            candidate_checkpoint_id=checkpoint_id,
+            benchmark_manifests=[],
+            promotion_threshold=promotion_threshold,
+        ).model_dump()
 
     @app.post("/v1/operator/jobs")
     def operator_enqueue_job(req: OperatorJobRequest):

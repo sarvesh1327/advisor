@@ -51,6 +51,12 @@ def test_create_http_app_includes_health_route(tmp_path):
     assert "/v1/operator/runs/{run_id}" in routes
     assert "/v1/operator/jobs" in routes
     assert "/v1/operator/jobs/{job_id}/resume" in routes
+    assert "/v1/operator/jobs/{job_id}/run" in routes
+    assert "/v1/operator/queue" in routes
+    assert "/v1/operator/queue/pause" in routes
+    assert "/v1/operator/queue/resume" in routes
+    assert "/v1/operator/checkpoints/{advisor_profile_id}" in routes
+    assert "/v1/operator/checkpoints/{advisor_profile_id}/{checkpoint_id}/eval" in routes
     assert "/v1/operator/retention/enforce" in routes
 
 

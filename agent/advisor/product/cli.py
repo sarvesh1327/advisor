@@ -10,6 +10,8 @@ from agent.advisor.operators.operator_runtime import (
     RetentionEnforcer,
     build_deployment_profile,
     build_operator_snapshot,
+    enqueue_forced_profile_eval,
+    inspect_profile_checkpoints,
     run_operator_job,
 )
 from agent.advisor.product.api import create_gateway, create_http_app, get_version
@@ -20,6 +22,7 @@ from agent.advisor.product.hardening import (
     export_product_bundle,
     import_product_bundle,
 )
+from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 try:
     from uvicorn import run as uvicorn_run
@@ -57,6 +60,26 @@ def build_parser() -> argparse.ArgumentParser:
     operator_run_parser = subparsers.add_parser("operator-run-job", help="Run a queued operator job by id")
     operator_run_parser.add_argument("--job-id", required=True, help="Queued operator job id")
     operator_run_parser.set_defaults(handler=_handle_operator_run_job)
+
+    operator_queue_status_parser = subparsers.add_parser("operator-queue-status", help="Print operator queue state JSON")
+    operator_queue_status_parser.set_defaults(handler=_handle_operator_queue_status)
+
+    operator_queue_pause_parser = subparsers.add_parser("operator-queue-pause", help="Pause the operator queue")
+    operator_queue_pause_parser.add_argument("--reason", default=None, help="Optional pause reason")
+    operator_queue_pause_parser.set_defaults(handler=_handle_operator_queue_pause)
+
+    operator_queue_resume_parser = subparsers.add_parser("operator-queue-resume", help="Resume the operator queue")
+    operator_queue_resume_parser.set_defaults(handler=_handle_operator_queue_resume)
+
+    operator_checkpoints_parser = subparsers.add_parser("operator-checkpoints", help="Inspect checkpoints for a profile")
+    operator_checkpoints_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    operator_checkpoints_parser.set_defaults(handler=_handle_operator_checkpoints)
+
+    operator_force_eval_parser = subparsers.add_parser("operator-force-eval", help="Enqueue a forced profile eval job")
+    operator_force_eval_parser.add_argument("--advisor-profile-id", required=True, help="Advisor profile id")
+    operator_force_eval_parser.add_argument("--checkpoint-id", required=True, help="Candidate checkpoint id")
+    operator_force_eval_parser.add_argument("--promotion-threshold", type=float, default=0.05, help="Promotion threshold")
+    operator_force_eval_parser.set_defaults(handler=_handle_operator_force_eval)
 
     retention_parser = subparsers.add_parser("retention-enforce", help="Archive and prune retained runs/events")
     retention_parser.set_defaults(handler=_handle_retention_enforce)
@@ -144,7 +167,7 @@ def _handle_operator_overview(args) -> int:
 def _handle_operator_run_job(args) -> int:
     settings = AdvisorSettings.load()
     gateway = create_gateway(settings=settings)
-    queue = OperatorJobQueue(Path(settings.trace_db_path).expanduser().parent / "operator" / "jobs.json")
+    queue = OperatorJobQueue(_queue_path(settings))
     record = run_operator_job(
         queue,
         args.job_id,
@@ -153,6 +176,57 @@ def _handle_operator_run_job(args) -> int:
     )
     print(json.dumps(record.model_dump(), ensure_ascii=False))
     return 0
+
+
+
+def _handle_operator_queue_status(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    queue = OperatorJobQueue(_queue_path(settings))
+    print(json.dumps(queue.queue_status(), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_operator_queue_pause(args) -> int:
+    settings = AdvisorSettings.load()
+    queue = OperatorJobQueue(_queue_path(settings))
+    print(json.dumps(queue.pause(reason=args.reason), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_operator_queue_resume(args) -> int:
+    del args
+    settings = AdvisorSettings.load()
+    queue = OperatorJobQueue(_queue_path(settings))
+    print(json.dumps(queue.resume_queue(), ensure_ascii=False))
+    return 0
+
+
+
+def _handle_operator_checkpoints(args) -> int:
+    settings = AdvisorSettings.load()
+    lifecycle_manager = _build_lifecycle_manager(settings)
+    payload = inspect_profile_checkpoints(lifecycle_manager, advisor_profile_id=args.advisor_profile_id)
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+
+def _handle_operator_force_eval(args) -> int:
+    settings = AdvisorSettings.load()
+    queue = OperatorJobQueue(_queue_path(settings))
+    record = enqueue_forced_profile_eval(
+        queue,
+        advisor_profile_id=args.advisor_profile_id,
+        candidate_checkpoint_id=args.checkpoint_id,
+        benchmark_manifests=[],
+        promotion_threshold=args.promotion_threshold,
+    )
+    print(json.dumps(record.model_dump(), ensure_ascii=False))
+    return 0
+
 
 
 def _handle_retention_enforce(args) -> int:
@@ -204,6 +278,17 @@ def _handle_import_bundle(args) -> int:
     restored_root = import_product_bundle(bundle_path=args.bundle_path, target_root=args.target_root)
     print(json.dumps({"restored_root": str(restored_root)}, ensure_ascii=False))
     return 0
+
+
+
+def _queue_path(settings: AdvisorSettings) -> Path:
+    return Path(settings.trace_db_path).expanduser().parent / "operator" / "jobs.json"
+
+
+
+def _build_lifecycle_manager(settings: AdvisorSettings) -> CheckpointLifecycleManager:
+    return CheckpointLifecycleManager(Path(settings.trace_db_path).expanduser().parent / "artifacts")
+
 
 
 def _parse_tool_limits(entries: list[str]) -> dict:
