@@ -149,6 +149,12 @@ def build_phase6_promotion_guard(
         )
 
     deltas = dict(evaluation.get("deltas") or {})
+    if evaluation.get("promote") is True and not deltas:
+        return _blocked_promotion(
+            advisor_profile_id=advisor_profile_id,
+            checkpoint_id=candidate_checkpoint_id,
+            reason="promotion blocked because evaluation deltas are missing or non-finite",
+        )
     if not deltas:
         return None
     overall_delta = deltas.get("overall_score")

@@ -266,6 +266,7 @@ def test_run_operator_job_executes_train_and_eval_jobs_with_structured_results(t
             "advisor_profile_id": payload.advisor_profile_id,
             "candidate_checkpoint_id": payload.candidate_checkpoint_id,
             "promote": True,
+            "deltas": {"overall_score": 0.2, "focus_target_recall": 0.1},
         },
     )
 
@@ -320,6 +321,7 @@ def test_run_operator_job_returns_completed_record_without_rerunning(tmp_path):
                 "advisor_profile_id": "coding-default",
                 "candidate_checkpoint_id": "ckpt-1",
                 "promote": True,
+                "deltas": {"overall_score": 0.2, "focus_target_recall": 0.1},
             },
         ).model_dump(),
     )
@@ -394,6 +396,7 @@ def test_run_continuous_training_cycle_runs_train_eval_and_promote_in_order(tmp_
             "advisor_profile_id": payload.advisor_profile_id,
             "candidate_checkpoint_id": payload.candidate_checkpoint_id,
             "promote": True,
+            "deltas": {"overall_score": 0.3, "focus_target_recall": 0.3},
         },
         promote_checkpoint_fn=lambda payload: calls.append(("promote", payload.candidate_checkpoint_id)) or {
             "promoted": True,
@@ -468,6 +471,7 @@ def test_run_continuous_training_cycle_reuses_completed_jobs_on_repeat(tmp_path)
             "advisor_profile_id": payload.advisor_profile_id,
             "candidate_checkpoint_id": payload.candidate_checkpoint_id,
             "promote": True,
+            "deltas": {"overall_score": 0.25, "focus_target_recall": 0.2},
         },
         promote_checkpoint_fn=lambda payload: calls.__setitem__("promote", calls["promote"] + 1) or {
             "promoted": True,

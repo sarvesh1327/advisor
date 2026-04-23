@@ -103,6 +103,26 @@ def test_run_continuous_training_cycle_rejects_blocking_hardening_issues_before_
 
 def test_run_operator_job_blocks_promotion_when_eval_evidence_is_regressive_or_malformed(tmp_path):
     queue = OperatorJobQueue(tmp_path / "jobs.json")
+    missing_deltas_job = queue.enqueue_job(
+        job_type="promote-checkpoint",
+        payload=PromoteCheckpointJobPayload(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="ckpt-missing-deltas",
+            evaluation={
+                "advisor_profile_id": "coding-default",
+                "candidate_checkpoint_id": "ckpt-missing-deltas",
+                "promote": True,
+                "decision_reason": "missing deltas should block",
+            },
+        ).model_dump(),
+        resume_token="promote-missing-deltas",
+    )
+    blocked_missing_deltas = run_operator_job(
+        queue,
+        missing_deltas_job.job_id,
+        promote_checkpoint_fn=lambda payload: {"promoted": True},
+    )
+
     promote_job = queue.enqueue_job(
         job_type="promote-checkpoint",
         payload=PromoteCheckpointJobPayload(
@@ -122,6 +142,10 @@ def test_run_operator_job_blocks_promotion_when_eval_evidence_is_regressive_or_m
 
     result = run_operator_job(queue, promote_job.job_id, promote_checkpoint_fn=lambda payload: {"promoted": True})
 
+    assert blocked_missing_deltas.status == "completed"
+    assert blocked_missing_deltas.result["status"] == "blocked"
+    assert blocked_missing_deltas.result["promoted"] is False
+    assert "missing or non-finite" in blocked_missing_deltas.result["reason"]
     assert result.status == "completed"
     assert result.result["status"] == "blocked"
     assert result.result["promoted"] is False
