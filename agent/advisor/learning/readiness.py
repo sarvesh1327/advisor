@@ -60,6 +60,8 @@ def build_learning_readiness_report(
     blocking_reasons: list[str] = []
     if profile.training is None:
         blocking_reasons.append("training_not_configured")
+    elif profile.training.rollout_group_size <= 0:
+        blocking_reasons.append("invalid_rollout_group_size")
     if profile_state.paused:
         blocking_reasons.append("profile_paused")
     backoff_until = parse_ts(profile_state.backoff_until)

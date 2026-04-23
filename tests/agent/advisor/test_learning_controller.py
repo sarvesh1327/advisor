@@ -1,10 +1,14 @@
+import textwrap
 from pathlib import Path
 
 from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
 from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.execution.orchestration import DeterministicABRouter, ExecutorRunResult, FrontierChatExecutor
 from agent.advisor.learning.controller import AutonomousLearningController
+from agent.advisor.learning.readiness import build_learning_readiness_report, collect_fresh_rollout_groups
+from agent.advisor.learning.state import AutonomousLearningState
 from agent.advisor.product.api import create_orchestrator
+from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.storage.trace_store import AdvisorTraceStore
 
 
@@ -64,6 +68,37 @@ def _seed_dogfood_run(tmp_path, run_id: str, profile_id: str = "coding-default")
     return settings, store, result
 
 
+def _write_zero_group_profiles(tmp_path):
+    config_path = tmp_path / "profiles-zero-group.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            default_profile_id = "coding-default"
+
+            [profiles.coding-default]
+            domain = "coding"
+            description = "Default coding advisor profile"
+
+            [profiles.coding-default.training]
+            backend = "grpo"
+            rollout_group_size = 0
+            num_generations = 8
+            max_steps = 12
+            max_prompt_tokens = 4096
+            max_completion_tokens = 1024
+            checkpoint_root = "artifacts/checkpoints/coding-default"
+            base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+            adapter_method = "lora"
+            lora_rank = 32
+            lora_alpha = 64
+            lora_dropout = 0.05
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            """
+        ).strip()
+    )
+    return AdvisorProfileRegistry.from_toml(config_path)
+
+
 def test_autonomous_learning_controller_consumes_real_dogfood_runs_and_persists_state(tmp_path, monkeypatch):
     settings, store, _ = _seed_dogfood_run(tmp_path, "run-dogfood-1")
     _seed_dogfood_run(tmp_path, "run-dogfood-2")
@@ -81,14 +116,19 @@ def test_autonomous_learning_controller_consumes_real_dogfood_runs_and_persists_
 
     controller = AutonomousLearningController(settings=settings, trace_store=store)
     tick = controller.tick()
+    _seed_dogfood_run(tmp_path, "run-dogfood-11")
+    _seed_dogfood_run(tmp_path, "run-dogfood-12")
+    second_tick = controller.tick()
     status = controller.controller_status()
 
     assert tick["launched_profiles"] == ["coding-default"]
     assert tick["cycle_results"]["coding-default"]["promoted"] is True
+    assert second_tick["launched_profiles"] == ["coding-default"]
     profile_state = status["profiles"]["coding-default"]
-    assert len(profile_state["consumed_run_ids"]) == 2
+    assert len(profile_state["consumed_run_ids"]) == 4
     assert profile_state["last_cycle_experiment_id"] is not None
     assert profile_state["last_cycle_completed_at"] is not None
+    assert profile_state["active_cycle_job_ids"] == []
 
 
 def test_autonomous_learning_controller_applies_backoff_and_profile_pause_after_repeated_failures(tmp_path, monkeypatch):
@@ -140,3 +180,29 @@ def test_autonomous_learning_controller_readiness_report_blocks_when_no_fresh_ru
 
     assert readiness["ready"] is False
     assert "insufficient_fresh_runs" in readiness["blocking_reasons"]
+
+
+def test_collect_fresh_rollout_groups_blocks_non_positive_rollout_group_size(tmp_path):
+    settings, store, _ = _seed_dogfood_run(tmp_path, "run-zero-1")
+    _seed_dogfood_run(tmp_path, "run-zero-2")
+    registry = _write_zero_group_profiles(tmp_path)
+    state = AutonomousLearningState()
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+
+    assert report.ready is False
+    assert "invalid_rollout_group_size" in report.blocking_reasons
+    assert (
+        collect_fresh_rollout_groups(
+            store=store,
+            registry=registry,
+            state=state,
+            advisor_profile_id="coding-default",
+        )
+        is None
+    )

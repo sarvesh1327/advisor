@@ -184,11 +184,7 @@ class AutonomousLearningController:
                 continue
             mark_rollout_group_consumed(state, advisor_profile_id=profile_id, run_ids=collection.run_ids)
             profile_state = _profile_state(state, profile_id)
-            profile_state.active_cycle_job_ids = [
-                cycle_result["train_job"]["job_id"],
-                cycle_result["eval_job"]["job_id"],
-                *([cycle_result["promote_job"]["job_id"]] if cycle_result.get("promote_job") else []),
-            ]
+            profile_state.active_cycle_job_ids = []
             profile_state.last_cycle_completed_at = utc_now().isoformat()
             profile_state.consecutive_failures = 0
             profile_state.backoff_until = None
