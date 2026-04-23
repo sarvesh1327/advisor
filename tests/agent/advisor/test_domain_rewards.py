@@ -107,6 +107,59 @@ def test_ui_reward_functions_cover_layout_and_screenshot_paths():
 
 
 
+def test_reward_registry_preserves_explicit_zero_constraint_metric_over_fallback_value():
+    registry = RewardRegistry.default()
+    packet = _packet("run-zero-metric")
+    advice = AdviceBlock(task_type="ui-update", recommended_plan=["inspect gateway.py"], confidence=0.8)
+    outcome = AdvisorOutcome(run_id=packet.run_id, status="success", files_touched=["gateway.py"], retries=0, tests_run=[])
+
+    label = registry.compute_reward_for_profile(
+        AdvisorProfile(
+            profile_id="image-ui-screenshot",
+            domain="image-ui",
+            reward_spec_id="ui_edit_from_screenshot",
+        ),
+        packet,
+        advice,
+        outcome,
+        executor_result={"status": "success", "metadata": {"render_valid": True}},
+        verifier_results=[
+            {
+                "status": "pass",
+                "metadata": {
+                    "screenshot_similarity": 1.0,
+                    "constraint_pass_rate": 0.0,
+                    "hard_constraint_pass_rate": 1.0,
+                },
+            }
+        ],
+    )
+
+    assert label.raw_reward == 0.7
+    assert label.reward_diagnostics["constraint_pass_rate"] == 0.0
+
+
+
+def test_reward_registry_handles_non_numeric_steps_by_falling_back_to_retry_count():
+    registry = RewardRegistry.default()
+    packet = _packet("run-bad-steps")
+    advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.8)
+    outcome = AdvisorOutcome(run_id=packet.run_id, status="success", files_touched=["gateway.py"], retries=2, tests_run=[])
+
+    label = registry.compute_for_profile_id(
+        "coding-default",
+        packet,
+        advice,
+        outcome,
+        executor_result={"status": "success", "metadata": {"steps": "bad-value"}},
+        verifier_results=[{"status": "pass", "metadata": {}}],
+    )
+
+    assert label.raw_reward == 0.9625
+    assert label.reward_diagnostics["steps"] == 3
+
+
+
 def test_research_reward_function_averages_grounding_constraint_and_coverage_scores():
     reward, diagnostics = compute_research_writing_match_reward(
         grounding_score=0.9,
