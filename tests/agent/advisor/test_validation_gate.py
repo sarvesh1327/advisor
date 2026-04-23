@@ -203,6 +203,8 @@ def test_build_phase8_validation_report_passes_with_promotion_rollback_and_posit
 
     assert report["pass"] is True
     assert report["failed_checks"] == []
+    assert report["code_complete"] is True
+    assert report["autonomous_learning_ready"] is False
     coding = report["profiles"]["coding-default"]
     assert coding["summary"]["cycle_count"] == 2
     assert coding["summary"]["promoted_cycle_count"] == 1
