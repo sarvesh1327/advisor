@@ -131,6 +131,7 @@ Core rule:
 - [x] Persist exact experiment manifests for each training run
 - [x] Record profile-local GRPO backend adapter artifacts and profile-owned candidate checkpoints
 - [x] Resolve promoted profile checkpoints into runtime-loadable MLX adapters
+- [x] Thread advisor profile ids through orchestrator and training-rollout runtime calls
 - [x] Gate profile promotion on profile-local benchmark deltas with explicit rollback reasons
 
 ## Phase 15 — Operator surface and deployment path

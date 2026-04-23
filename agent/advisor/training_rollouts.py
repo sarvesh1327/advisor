@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -74,7 +75,13 @@ def execute_training_rollout(
     verifiers: list[Any],
     reward_registry: RewardRegistry,
 ) -> TrainingRolloutResult:
-    advice = AdviceBlock.model_validate(runtime.generate_advice(request.packet, system_prompt=request.system_prompt))
+    generate_advice = runtime.generate_advice
+    # Keep rollout execution compatible with older runtimes while threading profile-aware loads when supported.
+    signature = inspect.signature(generate_advice)
+    kwargs = {"system_prompt": request.system_prompt}
+    if "advisor_profile_id" in signature.parameters:
+        kwargs["advisor_profile_id"] = request.advisor_profile_id
+    advice = AdviceBlock.model_validate(generate_advice(request.packet, **kwargs))
     executor_request = ExecutorRequest(
         run_id=request.packet.run_id,
         packet=request.packet,

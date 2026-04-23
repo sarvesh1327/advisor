@@ -38,6 +38,8 @@ The repo now provides:
   - resolves the active profile checkpoint through the lifecycle registry
   - loads MLX with the promoted adapter directory when one is active
   - fails clearly if an active checkpoint is missing its real adapter artifact
+- `orchestration.py` and `training_rollouts.py`
+  - thread `advisor_profile_id` into profile-aware runtimes while preserving backward compatibility with older runtime signatures
 - `training_rollouts.py`
   - defines single-rollout and grouped-rollout contracts
   - supports both single-turn and multi-turn rollout payloads
