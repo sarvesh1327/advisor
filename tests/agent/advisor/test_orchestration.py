@@ -202,3 +202,65 @@ def test_orchestrator_supports_optional_second_pass_review(tmp_path):
     assert result.lineage.review_advice is not None
     assert result.lineage.review_advice.recommended_plan == ["double-check reward capture"]
     assert result.manifest.review_enabled is True
+
+
+class ProfileAwareRuntime(StubRuntime):
+    def generate_advice(self, packet, system_prompt=None, advisor_profile_id=None):
+        self.calls.append(
+            {
+                "packet": packet,
+                "system_prompt": system_prompt,
+                "advisor_profile_id": advisor_profile_id,
+            }
+        )
+        return self._advice_blocks.pop(0)
+
+
+
+def test_orchestrator_passes_profile_id_to_profile_aware_runtime(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    runtime = ProfileAwareRuntime(
+        [AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.91)]
+    )
+    orchestrator = AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=store,
+        executor=FrontierChatExecutor(
+            name="frontier-chat",
+            execute_fn=lambda request: ExecutorRunResult(status="success", summary="done", output="done"),
+        ),
+        verifiers=[],
+        router=DeterministicABRouter(advisor_fraction=1.0),
+        settings=AdvisorSettings(advisor_profile_id="image-ui"),
+    )
+
+    orchestrator.run(_packet("run-profile-aware"))
+
+    assert runtime.calls[0]["advisor_profile_id"] == "image-ui"
+
+
+
+def test_orchestrator_review_path_preserves_profile_id_for_profile_aware_runtime(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    runtime = ProfileAwareRuntime(
+        [
+            AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.82),
+            AdviceBlock(task_type="review", recommended_plan=["double-check reward capture"], confidence=0.73),
+        ]
+    )
+    orchestrator = AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=store,
+        executor=FrontierChatExecutor(
+            name="frontier-chat",
+            execute_fn=lambda request: ExecutorRunResult(status="partial", summary="draft", output="draft"),
+        ),
+        verifiers=[],
+        router=DeterministicABRouter(advisor_fraction=1.0),
+        enable_second_pass_review=True,
+        settings=AdvisorSettings(advisor_profile_id="image-ui"),
+    )
+
+    orchestrator.run(_packet("run-profile-review"))
+
+    assert [call["advisor_profile_id"] for call in runtime.calls] == ["image-ui", "image-ui"]

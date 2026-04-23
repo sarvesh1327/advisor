@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -237,7 +238,12 @@ class AdvisorOrchestrator:
 
     def run(self, packet: AdvisorInputPacket, *, system_prompt: str | None = None) -> LiveRunResult:
         self.event_logger.log("run.started", run_id=packet.run_id, stage="advisor", payload={"task_type": packet.task_type})
-        primary_advice, latency_ms = self._generate_advice(packet, system_prompt=system_prompt)
+        profile = self.profile_registry.resolve(self.settings.advisor_profile_id)
+        primary_advice, latency_ms = self._generate_advice(
+            packet,
+            system_prompt=system_prompt,
+            advisor_profile_id=profile.profile_id,
+        )
         routing_decision = self.router.choose(packet)
         self.event_logger.log(
             "routing.decided",
@@ -335,9 +341,23 @@ class AdvisorOrchestrator:
         self.event_logger.log("run.completed", run_id=packet.run_id, stage="lineage", payload={"status": outcome.status})
         return LiveRunResult(run_id=packet.run_id, manifest=manifest, lineage=lineage)
 
-    def _generate_advice(self, packet: AdvisorInputPacket, *, system_prompt: str | None) -> tuple[AdviceBlock, int]:
+    def _generate_advice(
+        self,
+        packet: AdvisorInputPacket,
+        *,
+        system_prompt: str | None,
+        advisor_profile_id: str,
+    ) -> tuple[AdviceBlock, int]:
         started = time.perf_counter()
-        advice = self.runtime.generate_advice(packet, system_prompt=system_prompt)
+        generate_advice = self.runtime.generate_advice
+        # Keep orchestrator compatibility with older runtimes while enabling profile-aware adapter loads.
+        signature = inspect.signature(generate_advice)
+        kwargs = {}
+        if "system_prompt" in signature.parameters:
+            kwargs["system_prompt"] = system_prompt
+        if "advisor_profile_id" in signature.parameters:
+            kwargs["advisor_profile_id"] = advisor_profile_id
+        advice = generate_advice(packet, **kwargs)
         latency_ms = int((time.perf_counter() - started) * 1000)
         return self.validator.validate(advice), latency_ms
 
@@ -376,7 +396,11 @@ class AdvisorOrchestrator:
                 metadata={"status": executor_result.status},
             )
         )
-        review_advice, _ = self._generate_advice(review_packet, system_prompt=system_prompt)
+        review_advice, _ = self._generate_advice(
+            review_packet,
+            system_prompt=system_prompt,
+            advisor_profile_id=self.settings.advisor_profile_id,
+        )
         return review_advice
 
     def _build_outcome(

@@ -169,3 +169,42 @@ def test_execute_training_rollout_group_summarizes_reward_values():
     assert group_result.rollout_count == 2
     assert group_result.reward_values == [0.95, 0.95]
     assert group_result.summary["mean_reward"] == 0.95
+
+
+class ProfileAwareRuntime(StubRuntime):
+    def generate_advice(self, packet, system_prompt=None, advisor_profile_id=None):
+        self.calls.append(
+            {
+                "packet": packet,
+                "system_prompt": system_prompt,
+                "advisor_profile_id": advisor_profile_id,
+            }
+        )
+        return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect main.py"], confidence=0.9)
+
+
+
+def test_execute_training_rollout_passes_profile_id_to_profile_aware_runtime():
+    runtime = ProfileAwareRuntime()
+    executor = FrontierChatExecutor(
+        name="frontier-chat",
+        execute_fn=lambda request: ExecutorRunResult(status="success", summary="patched", output="patched"),
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-profile-aware",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-profile-aware"),
+        executor_name="frontier-chat",
+        executor_kind="frontier_chat",
+        verifier_names=[],
+    )
+
+    execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert runtime.calls[0]["advisor_profile_id"] == "coding-default"
