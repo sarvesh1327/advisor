@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from agent.advisor.adapters.coding_adapter import CodingContextAdapter
-from agent.advisor.adapters.image_adapter import ImageUIContextAdapter
+from agent.advisor.adapters.image_adapter import ImageUIContextAdapter, TextUIContextAdapter
 from agent.advisor.adapters.research_adapter import ResearchContextAdapter
 from agent.advisor.core.schemas import AdvisorInputPacket, CandidateFile
 from agent.advisor.storage.trace_store import AdvisorTraceStore
@@ -42,6 +42,7 @@ class ContextBuilder:
         self.adapter_registry = {
             "coding": CodingContextAdapter(token_budget=token_budget),
             "research-writing": ResearchContextAdapter(token_budget=token_budget),
+            "text-ui": TextUIContextAdapter(token_budget=token_budget),
             "image-ui": ImageUIContextAdapter(token_budget=token_budget),
         }
 
@@ -56,6 +57,7 @@ class ContextBuilder:
         branch: str | None = None,
         task_type_hint: str | None = None,
         changed_files: list[str] | None = None,
+        profile_domain: str | None = None,
     ) -> AdvisorInputPacket:
         repo = Path(repo_path).expanduser().resolve()
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -70,7 +72,12 @@ class ContextBuilder:
             changed_files=changed_files or [],
         )
         constraints = self._constraints_from_task(task_text)
-        adapter = self._select_adapter(task_text=task_text, task_type=task_type, tool_limits=tool_limits)
+        adapter = self._select_adapter(
+            task_text=task_text,
+            task_type=task_type,
+            tool_limits=tool_limits,
+            profile_domain=profile_domain,
+        )
         packet = adapter.build_packet(
             run_id=run_id,
             task_text=task_text,
@@ -102,9 +109,19 @@ class ContextBuilder:
             return "ui-update"
         return "feature"
 
-    def _select_adapter(self, *, task_text: str, task_type: str, tool_limits: dict) -> PacketAdapter:
+    def _select_adapter(
+        self,
+        *,
+        task_text: str,
+        task_type: str,
+        tool_limits: dict,
+        profile_domain: str | None = None,
+    ) -> PacketAdapter:
         if self.default_packet_adapter is not None:
             return self.packet_adapter
+        if profile_domain in self.adapter_registry:
+            # Explicit profile selection should beat task-text heuristics.
+            return self.adapter_registry[profile_domain]
         text = task_text.lower()
         if task_type in {"research", "analysis"} or any(tok in text for tok in ("research", "sources", "citations", "notes")):
             return self.adapter_registry["research-writing"]

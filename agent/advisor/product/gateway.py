@@ -107,7 +107,8 @@ class AdvisorGateway:
         advisor_profile_id: str | None = None,
         changed_files: list[str] | None = None,
     ) -> AdvisorTaskRunResult:
-        resolved_profile_id = self._resolve_profile_id(advisor_profile_id)
+        resolved_profile = self.profile_registry.resolve(advisor_profile_id)
+        resolved_profile_id = resolved_profile.profile_id
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         packet = self.context_builder.build(
             task_text=task_text,
@@ -118,6 +119,7 @@ class AdvisorGateway:
             branch=branch,
             task_type_hint=task_type_hint,
             changed_files=changed_files or [],
+            profile_domain=resolved_profile.domain,
         )
         packet.repo["session_id"] = session_id
         packet.repo["task_id"] = task_id

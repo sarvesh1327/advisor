@@ -21,8 +21,10 @@ _REGION_TOKENS = ("hero", "header", "footer", "sidebar", "modal", "card", "banne
 
 
 class ImageUIContextAdapter:
-    def __init__(self, *, token_budget: int):
+    def __init__(self, *, token_budget: int, domain: str = "image-ui", context_summary: str | None = None):
         self.token_budget = token_budget
+        self.domain = domain
+        self.context_summary = context_summary or f"{domain} task context"
 
     def build_packet(
         self,
@@ -66,9 +68,9 @@ class ImageUIContextAdapter:
             tool_limits=tool_limits,
             acceptance_criteria=acceptance_criteria,
             token_budget=self.token_budget,
-            task=AdvisorTask(domain="image-ui", text=task_text, type=task_type),
+            task=AdvisorTask(domain=self.domain, text=task_text, type=task_type),
             context=AdvisorContext(
-                summary="image-ui task context",
+                summary=self.context_summary,
                 metadata={
                     "repo": repo,
                     "changed_files": changed_files,
@@ -81,7 +83,7 @@ class ImageUIContextAdapter:
             history=history,
             domain_capabilities=[
                 AdvisorCapabilityDescriptor(
-                    domain="image-ui",
+                    domain=self.domain,
                     supported_artifact_kinds=["image", "layout", "reference"],
                     supported_packet_fields=["task", "context", "artifacts", "constraints", "history", "acceptance_criteria"],
                     supports_changed_artifacts=True,
@@ -152,3 +154,8 @@ class ImageUIContextAdapter:
                 seen.add(top)
                 modules.append(top)
         return modules[:10]
+
+
+class TextUIContextAdapter(ImageUIContextAdapter):
+    def __init__(self, *, token_budget: int):
+        super().__init__(token_budget=token_budget, domain="text-ui")
