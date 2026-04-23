@@ -21,6 +21,25 @@ def test_run_task_uses_gateway_and_returns_result(tmp_path):
     assert result.advisor_input_packet.repo["path"] == str(repo)
 
 
+
+def test_run_task_passes_profile_override_through_gateway(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "ui" / "layouts").mkdir(parents=True)
+    (repo / "ui" / "layouts" / "home.json").write_text("{}")
+
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
+    gateway = create_gateway(settings=settings, runtime=StubRuntime())
+    result = run_task(
+        task_text="refresh homepage layout from brief",
+        repo_path=str(repo),
+        gateway=gateway,
+        advisor_profile_id="text-ui",
+    )
+
+    assert result.advisor_profile_id == "text-ui"
+    assert result.advisor_input_packet.task.domain == "text-ui"
+
+
 def test_create_http_app_includes_health_route(tmp_path):
     settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
     app = create_http_app(settings=settings)

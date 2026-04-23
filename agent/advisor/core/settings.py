@@ -23,8 +23,8 @@ def get_default_advisor_home() -> Path:
 
 
 def get_default_profiles_path() -> Path:
-    # Keep the default profile registry with the repo config so profile selection stays deterministic in local development.
-    return Path(__file__).resolve().parents[2] / "config" / "advisor_profiles.toml"
+    # Keep the default profile registry at the repo root config so all entry surfaces resolve the same live profiles.
+    return Path(__file__).resolve().parents[3] / "config" / "advisor_profiles.toml"
 
 
 class AdvisorSettings(BaseModel):
