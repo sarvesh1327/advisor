@@ -48,6 +48,7 @@ def test_export_training_examples_writes_jsonl(tmp_path):
     assert payload["target_advice"]["recommended_plan"] == ["inspect main.py"]
     assert payload["reward_label"]["example_type"] == "positive"
     assert payload["quality_score"] == payload["reward_label"]["quality_score"]
+    assert payload["reward_label"]["reward_profile_id"] == "legacy-generic"
 
 
 def test_export_training_examples_filters_low_quality_and_keeps_negative_examples(tmp_path):
@@ -120,3 +121,4 @@ def test_export_training_examples_filters_low_quality_and_keeps_negative_example
     assert rows[1]["example_type"] == "negative"
     assert rows[1]["hard_case_bucket"] == "constraint_failure"
     assert rows[0]["split"] == rows[1]["split"]
+    assert rows[0]["reward_label"]["reward_profile_id"] == "legacy-generic"

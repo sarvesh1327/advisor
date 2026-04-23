@@ -9,6 +9,7 @@ from agent.advisor.orchestration import (
     VerifierResult,
 )
 from agent.advisor.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.settings import AdvisorSettings
 from agent.advisor.trace_store import AdvisorTraceStore
 
 
@@ -86,12 +87,52 @@ def test_orchestrator_records_lineage_manifest_and_reward_for_advisor_arm(tmp_pa
     assert [item.kind for item in result.manifest.verifiers] == ["build_test", "rubric"]
     assert result.lineage.executor_result.status == "success"
     assert result.lineage.reward_label.example_type == "positive"
+    assert result.lineage.reward_label.advisor_profile_id == "coding-default"
+    assert result.lineage.reward_label.reward_profile_id == "coding_swe_efficiency"
+    assert result.lineage.reward_label.reward_formula == "coding_swe_efficiency"
+    assert result.lineage.reward_label.components is None
 
     persisted = store.get_lineage(result.run_id)
     assert persisted is not None
     assert persisted["manifest"]["routing_decision"]["arm"] == "advisor"
     assert persisted["manifest"]["executor"]["name"] == "frontier-chat"
     assert persisted["lineage"]["reward_label"]["run_id"] == result.run_id
+
+
+def test_orchestrator_uses_profile_reward_registry_not_reward_weight_presets(tmp_path):
+    def build_orchestrator(db_name: str, reward_preset: str):
+        return AdvisorOrchestrator(
+            runtime=StubRuntime([AdviceBlock(task_type="bugfix", recommended_plan=["inspect gateway.py"], confidence=0.9)]),
+            trace_store=AdvisorTraceStore(tmp_path / db_name),
+            executor=FrontierChatExecutor(
+                name="frontier-chat",
+                execute_fn=lambda request: ExecutorRunResult(
+                    status="success",
+                    summary="Executor completed the repair.",
+                    output="patched gateway.py and ran pytest -q",
+                    files_touched=["agent/advisor/gateway.py"],
+                    tests_run=["pytest tests/agent/advisor/test_orchestration.py -q"],
+                    metadata={"steps": 10},
+                ),
+            ),
+            verifiers=[
+                BuildTestVerifier(
+                    name="build-and-test",
+                    verify_fn=lambda request, result: VerifierResult(status="pass", summary="tests green"),
+                )
+            ],
+            router=DeterministicABRouter(advisor_fraction=1.0),
+            settings=AdvisorSettings(reward_preset=reward_preset, advisor_profile_id="coding-default"),
+        )
+
+    balanced = build_orchestrator("balanced.db", "balanced")
+    human_first = build_orchestrator("human-first.db", "human-first")
+
+    balanced_result = balanced.run(_packet("run-balanced"))
+    human_first_result = human_first.run(_packet("run-human-first"))
+
+    assert balanced_result.lineage.reward_label.total_reward == 0.875
+    assert human_first_result.lineage.reward_label.total_reward == 0.875
 
 
 def test_orchestrator_routes_baseline_runs_without_injecting_advice(tmp_path):

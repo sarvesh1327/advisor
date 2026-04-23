@@ -1,48 +1,74 @@
 # Phase 8 reward pipeline
 
-Phase 8 turns Advisor traces into reward-labeled training examples.
+Phase B upgrades the live reward path from a generic weighted component score to a profile-aware scalar reward registry while keeping legacy reward rows readable.
 
 ## Canonical reward inputs
 
-Reward is computed from:
+Live reward is now computed from:
 - canonical input packet
 - canonical advice block
-- executor outcome
-- optional human rating
+- executor outcome / executor metadata
+- verifier results / verifier metadata
 - optional constraint-violation list
+- resolved `advisor_profile_id`
 
-The current reward version is `phase8-v1`.
+Human rating is no longer part of the live optimization path.
 
-## Normalized reward components
+## Profile-aware reward registry
 
-Each run gets five normalized component scores in `[0, 1]`:
-- `task_success`
-- `efficiency`
-- `targeting_quality`
-- `constraint_compliance`
-- `human_usefulness`
+The live system resolves the active advisor profile first, then dispatches reward computation through a reward registry.
 
-These are combined into a weighted `total_reward` and mirrored into `quality_score` for curation.
+Current profile/spec mapping in the default config:
+- `coding-default` -> `coding_swe_efficiency`
+- `image-ui` -> `ui_from_text_layout`
+
+The registry also supports additional built-in specs used by tests and later phases:
+- `coding_exact_answer`
+- `ui_edit_from_screenshot`
+- `research_writing_match`
+
+## Scalar reward formulas in the live path
+
+### `coding_swe_efficiency`
+- `R = 0` if unresolved
+- `R = 0.5 + 0.5 * (MAX_STEPS - steps) / MAX_STEPS` if resolved
+- `MAX_STEPS = 40`
+
+### `ui_from_text_layout`
+- `R = 0` if render/build is invalid
+- otherwise `R = 0.75 * hard_constraint_pass_rate + 0.25 * soft_style_score`
+
+Additional built-in formulas are available for later profile slices:
+- `coding_exact_answer`
+- `ui_edit_from_screenshot`
+- `research_writing_match`
 
 ## Reward labels in the trace store
 
-Reward labels are persisted per run in the SQLite trace store.
+Reward labels are still persisted per run in SQLite as JSON, but new rows now carry profile-aware reward provenance:
+- `advisor_profile_id`
+- `reward_profile_id`
+- `reward_formula`
+- `reward_version`
+- `raw_reward`
+- `total_reward`
+- `quality_score`
+- `reward_diagnostics`
+- `dataset_split`
+- `example_type`
+- `hard_case_bucket`
+- `notes`
 
-Stored fields include:
-- component scores
-- total reward
-- quality score
-- dataset split
-- example type (`positive`, `negative`, `neutral`)
-- hard-case bucket
-- reward version
-- notes
+Legacy Phase 8 reward rows remain readable. They continue to surface:
+- `reward_profile_id = legacy-generic`
+- `reward_formula = weighted_components`
+- legacy `components` diagnostics
 
 ## Export and curation rules
 
-`export_training_examples()` now exports only runs with reward labels.
+`export_training_examples()` still exports only runs with reward labels.
 
-Curation behavior:
+Curation behavior remains:
 - filters out low-quality neutral examples with `min_quality_score`
 - keeps negative examples even when their score is low
 - assigns a stable split from repo-family + task-family when no explicit split override is given
@@ -51,7 +77,7 @@ Curation behavior:
 
 ## Hard-case buckets
 
-Current hard-case buckets are lightweight and deterministic:
+Current buckets remain lightweight and deterministic:
 - `constraint_failure`
 - `failed_execution`
 - `targeting_miss`
@@ -59,26 +85,11 @@ Current hard-case buckets are lightweight and deterministic:
 
 ## Feedback-loop notes
 
-Recommended loop:
+Current live loop:
 1. record packet/advice/outcome
-2. compute and persist reward label
-3. export curated JSONL with quality filtering
-4. train or evaluate against the frozen export
-5. inspect hard-case buckets and negative examples before changing reward weights
+2. resolve `advisor_profile_id`
+3. compute scalar reward through the reward registry
+4. persist reward provenance and diagnostics
+5. export curated JSONL later for offline dataset / training work
 
-## Split policy
-
-The default split policy hashes:
-- repo family
-- task family
-
-This is a lightweight leakage guard so closely related examples land in the same split.
-
-## Next phase handoff
-
-Phase 9 can now assume:
-- reward-labeled datasets exist
-- low-quality neutral traces can be filtered out
-- negative examples are preserved
-- hard cases can be sampled intentionally
-- dataset/reward versions are attached to each exported row
+Phase B intentionally does **not** yet make dataset manifests or checkpoint promotion profile-local. That lands in later follow-up phases.

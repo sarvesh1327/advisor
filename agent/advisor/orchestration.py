@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import time
 from hashlib import sha256
+from pathlib import Path
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
 from .injector import render_advice_for_user_context
 from .observability import RunEventLogger
-from .reward_model import RewardWeights, compute_reward_label
+from .profiles import AdvisorProfile, AdvisorProfileRegistry
+from .reward_registry import RewardRegistry
 from .schemas import (
     AdviceBlock,
     AdvisorArtifact,
@@ -205,6 +207,7 @@ class AdvisorOrchestrator:
         settings: AdvisorSettings | None = None,
         router: DeterministicABRouter | None = None,
         enable_second_pass_review: bool = False,
+        reward_registry: RewardRegistry | None = None,
     ):
         self.runtime = runtime
         self.trace_store = trace_store
@@ -215,6 +218,22 @@ class AdvisorOrchestrator:
         self.enable_second_pass_review = enable_second_pass_review
         self.validator = AdviceValidator()
         self.event_logger = RunEventLogger(self.settings.event_log_path)
+        self.profile_registry = self._load_profile_registry()
+        self.reward_registry = reward_registry or RewardRegistry.default()
+
+    def _load_profile_registry(self) -> AdvisorProfileRegistry:
+        profiles_path = Path(self.settings.advisor_profiles_path).expanduser()
+        if profiles_path.exists():
+            return AdvisorProfileRegistry.from_toml(profiles_path)
+        return AdvisorProfileRegistry(
+            default_profile_id=self.settings.advisor_profile_id,
+            profiles={
+                self.settings.advisor_profile_id: AdvisorProfile(
+                    profile_id=self.settings.advisor_profile_id,
+                    domain="generic",
+                )
+            },
+        )
 
     def run(self, packet: AdvisorInputPacket, *, system_prompt: str | None = None) -> LiveRunResult:
         self.event_logger.log("run.started", run_id=packet.run_id, stage="advisor", payload={"task_type": packet.task_type})
@@ -273,12 +292,15 @@ class AdvisorOrchestrator:
             for item in record.result.constraint_violations
             if item
         ]
-        reward_label = compute_reward_label(
+        profile = self.profile_registry.resolve(self.settings.advisor_profile_id)
+        reward_label = self.reward_registry.compute_reward_for_profile(
+            profile,
             packet,
             primary_advice,
             outcome,
+            executor_result=executor_result.model_dump(),
+            verifier_results=[record.model_dump() for record in verifier_results],
             constraint_violations=constraint_violations,
-            weights=RewardWeights(**self.settings.reward_weights().__dict__),
         )
         self.trace_store.record_reward_label(reward_label)
         self.event_logger.log(

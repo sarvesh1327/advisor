@@ -1,4 +1,5 @@
 from agent.advisor.reward_model import RewardWeights, compute_reward_label
+from agent.advisor.reward_registry import RewardRegistry
 from agent.advisor.schemas import (
     AdviceBlock,
     AdvisorInputPacket,
@@ -47,6 +48,8 @@ def test_compute_reward_label_scores_canonical_components():
 
     assert label.run_id == "run-1"
     assert label.reward_version == "phase8-v1"
+    assert label.reward_profile_id == "legacy-generic"
+    assert label.reward_formula == "weighted_components"
     assert label.components.task_success == 1.0
     assert label.components.targeting_quality == 1.0
     assert label.components.constraint_compliance == 1.0
@@ -114,3 +117,31 @@ def test_compute_reward_label_accepts_configured_weight_presets():
     )
 
     assert human_first.total_reward < balanced.total_reward
+
+
+def test_reward_registry_returns_profile_aware_labels_without_component_weights():
+    packet = _packet("run-profile-aware")
+    advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
+    outcome = AdvisorOutcome(
+        run_id="run-profile-aware",
+        status="success",
+        files_touched=["main.py"],
+        retries=2,
+        tests_run=["pytest -q"],
+        review_verdict="pass",
+    )
+
+    label = RewardRegistry.default().compute_for_profile_id(
+        "coding-default",
+        packet,
+        advice,
+        outcome,
+        executor_result={"status": "success", "metadata": {"steps": 10}},
+        verifier_results=[{"status": "pass", "metadata": {}}],
+    )
+
+    assert label.reward_profile_id == "coding_swe_efficiency"
+    assert label.reward_formula == "coding_swe_efficiency"
+    assert label.raw_reward == 0.875
+    assert label.total_reward == 0.875
+    assert label.components is None

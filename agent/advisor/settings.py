@@ -53,7 +53,7 @@ class AdvisorSettings(BaseModel):
     enable_fallback_runtime: bool = True
     reward_preset: str = "balanced"
     reward_weights_config: dict[str, float] = Field(default_factory=dict, alias="reward_weights")
-    advisor_profile_id: str = "default"
+    advisor_profile_id: str = "coding-default"
     advisor_profiles_path: str = str(get_default_profiles_path())
     retention_days: int = 30
     event_log_path: str = str(get_default_advisor_home() / "events.jsonl")
@@ -171,7 +171,7 @@ class AdvisorSettings(BaseModel):
             in {"1", "true", "yes", "on"},
             reward_preset=os.getenv("ADVISOR_REWARD_PRESET", "balanced"),
             reward_weights=reward_weights,
-            advisor_profile_id=os.getenv("ADVISOR_PROFILE_ID", "default"),
+            advisor_profile_id=os.getenv("ADVISOR_PROFILE_ID", "coding-default"),
             advisor_profiles_path=os.getenv("ADVISOR_PROFILES_PATH", str(get_default_profiles_path())),
             retention_days=int(os.getenv("ADVISOR_RETENTION_DAYS", "30")),
             event_log_path=os.getenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "events.jsonl")),

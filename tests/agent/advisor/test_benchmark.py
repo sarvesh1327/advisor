@@ -111,7 +111,7 @@ def test_build_benchmark_run_manifest_captures_canonical_replay_fields(tmp_path)
     assert manifest.executor_config["name"] == "frontier-chat"
     assert manifest.verifier_set == []
     assert manifest.routing_arm == "advisor"
-    assert manifest.reward_version == "phase8-v1"
+    assert manifest.reward_version == "coding-swe-efficiency-v1"
 
 
 def test_compare_benchmark_arms_is_reproducible_and_ablation_friendly():

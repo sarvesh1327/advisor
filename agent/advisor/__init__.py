@@ -68,6 +68,8 @@ from .results_pass import (
     summarize_transfer_results,
     write_phase16_results_report,
 )
+from .reward_registry import RewardRegistry
+from .reward_specs import RewardSpec
 from .schemas import (
     AdviceBlock,
     AdvisorInputPacket,
@@ -98,6 +100,8 @@ __all__ = [
     "AdvisorSettings",
     "AdvisorTaskRequest",
     "AdvisorTaskRunResult",
+    "RewardRegistry",
+    "RewardSpec",
     "BenchmarkCase",
     "BenchmarkReleasePolicy",
     "BenchmarkRunManifest",

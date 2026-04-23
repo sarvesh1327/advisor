@@ -248,13 +248,18 @@ class RewardComponentScores(BaseModel):
 
 class RewardLabel(BaseModel):
     run_id: str
-    components: RewardComponentScores
+    advisor_profile_id: str = "legacy-default"
+    reward_profile_id: str = "legacy-generic"
+    reward_formula: str = "weighted_components"
+    reward_version: str = "phase8-v1"
+    raw_reward: float = 0.0
     total_reward: float
     quality_score: float
+    reward_diagnostics: dict[str, object] = Field(default_factory=dict)
+    components: RewardComponentScores | None = None
     dataset_split: str = "train"
     example_type: Literal["positive", "negative", "neutral"] = "neutral"
     hard_case_bucket: str | None = None
-    reward_version: str = "phase8-v1"
     notes: list[str] = Field(default_factory=list)
 
 

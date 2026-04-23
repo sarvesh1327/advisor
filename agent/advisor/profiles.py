@@ -10,6 +10,7 @@ class AdvisorProfile(BaseModel):
     profile_id: str
     domain: str
     description: str | None = None
+    reward_spec_id: str | None = None
 
 
 class AdvisorProfileRegistry(BaseModel):
