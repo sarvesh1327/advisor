@@ -63,10 +63,43 @@ def test_build_dataset_manifest_groups_examples_and_supports_both_training_modes
     assert manifest["experiment_id"] == "exp-phase9"
     assert manifest["training_mode"] == "supervised"
     assert manifest["preference_training_mode"] == "dpo"
+    assert manifest["profile_count"] == 1
     assert manifest["counts"]["total_examples"] == 2
     assert manifest["counts"]["positive_examples"] == 1
     assert manifest["counts"]["negative_examples"] == 1
     assert set(manifest["splits"]) <= {"train", "val", "test"}
+    assert all(example["advisor_profile_id"] == "legacy-default" for example in manifest["examples"])
+
+
+def test_build_dataset_manifest_can_scope_examples_to_one_profile(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    _record_run(store, "run-a", repo_path="/tmp/repo-a", task_text="fix login prompt", status="success")
+    _record_run(store, "run-b", repo_path="/tmp/repo-b", task_text="fix layout prompt", status="failure")
+    store.record_reward_label(
+        {
+            **(store.get_run("run-b")["reward_label"] or {}),
+            "run_id": "run-b",
+            "advisor_profile_id": "image-ui",
+            "reward_profile_id": "ui_from_text_layout",
+            "reward_formula": "ui_from_text_layout",
+        }
+    )
+
+    config = ExperimentConfig(
+        experiment_id="exp-phase9-scoped",
+        student_model="advisor-small",
+        target_executor="gpt-4.1",
+        domain_mix={"coding": 1.0},
+    )
+
+    manifest = build_dataset_manifest(store, config, advisor_profile_id="image-ui")
+
+    assert manifest["advisor_profile_id"] == "image-ui"
+    assert manifest["profile_count"] == 1
+    assert manifest["counts"]["total_examples"] == 1
+    assert manifest["examples"][0]["run_id"] == "run-b"
+    assert manifest["examples"][0]["advisor_profile_id"] == "image-ui"
+
 
 
 def test_evaluate_checkpoint_reports_transfer_and_regression_signals():

@@ -112,6 +112,7 @@ def test_build_benchmark_run_manifest_captures_canonical_replay_fields(tmp_path)
     assert manifest.verifier_set == []
     assert manifest.routing_arm == "advisor"
     assert manifest.reward_version == "coding-swe-efficiency-v1"
+    assert manifest.advisor_profile_id == "coding-default"
 
 
 def test_compare_benchmark_arms_is_reproducible_and_ablation_friendly():
@@ -124,6 +125,7 @@ def test_compare_benchmark_arms_is_reproducible_and_ablation_friendly():
         executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
         verifier_set=["build-check"],
         routing_arm="baseline",
+        advisor_profile_id=None,
         reward_version="phase8-v1",
         score={"overall_score": 0.45, "focus_target_recall": 0.5},
     )
@@ -136,6 +138,7 @@ def test_compare_benchmark_arms_is_reproducible_and_ablation_friendly():
         executor_config={"name": "frontier-chat", "kind": "frontier_chat"},
         verifier_set=["build-check"],
         routing_arm="advisor",
+        advisor_profile_id="coding-default",
         reward_version="phase8-v1",
         score={"overall_score": 0.9, "focus_target_recall": 1.0},
     )
@@ -148,10 +151,12 @@ def test_compare_benchmark_arms_is_reproducible_and_ablation_friendly():
     assert first["arm_summary"]["baseline"]["mean_overall_score"] == 0.45
     assert first["deltas"]["advisor_minus_baseline"]["overall_score"] == 0.45
     assert first["by_split"]["validation"]["advisor"]["count"] == 1
+    assert first["by_profile"]["coding-default"]["advisor"]["mean_overall_score"] == 0.9
     assert first["ablation_axes"] == {
         "domains": ["coding"],
         "executor_kinds": ["frontier_chat"],
         "reward_versions": ["phase8-v1"],
         "splits": ["validation"],
         "verifier_sets": ["build-check"],
+        "advisor_profiles": ["coding-default"],
     }
