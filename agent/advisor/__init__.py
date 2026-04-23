@@ -90,9 +90,11 @@ from .training_rollouts import (
 )
 from .training_runtime import (
     CheckpointLifecycleManager,
+    ProfileCheckpointEvaluation,
     TrainingCheckpointRecord,
     TrainingJobConfig,
     TrainingJobResult,
+    evaluate_profile_checkpoint_for_promotion,
     evaluate_trained_checkpoint,
     run_profile_training_job,
 )
@@ -138,6 +140,7 @@ __all__ = [
     "OperatorJobQueue",
     "OperatorJobRecord",
     "OperatorJobRequest",
+    "ProfileCheckpointEvaluation",
     "RetentionEnforcer",
     "RubricVerifier",
     "RubricTextVerifier",
@@ -166,6 +169,7 @@ __all__ = [
     "create_http_app",
     "create_orchestrator",
     "default_paper_divergences",
+    "evaluate_profile_checkpoint_for_promotion",
     "evaluate_release_gate",
     "evaluate_trained_checkpoint",
     "export_live_metrics",

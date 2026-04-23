@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .benchmark import BenchmarkRunManifest
 from .profiles import AdvisorProfileRegistry
 from .training_backends import GRPOTrainingBackend
 from .training_rollouts import TrainingRolloutGroupResult
@@ -47,6 +48,20 @@ class TrainingCheckpointRecord(BaseModel):
     advisor_profile_id: str | None = None
 
 
+class ProfileCheckpointEvaluation(BaseModel):
+    advisor_profile_id: str
+    candidate_checkpoint_id: str
+    active_checkpoint_id: str | None = None
+    candidate_summary: dict[str, float] = Field(default_factory=dict)
+    baseline_summary: dict[str, float] = Field(default_factory=dict)
+    deltas: dict[str, float] = Field(default_factory=dict)
+    promotion_threshold: float = 0.05
+    promote: bool = False
+    rollback: bool = False
+    decision_reason: str
+    benchmark_manifest_count: int = 0
+
+
 class CheckpointLifecycleManager:
     def __init__(self, artifacts_root: str | Path):
         self.artifacts_root = Path(artifacts_root)
@@ -61,21 +76,54 @@ class CheckpointLifecycleManager:
         Path(record.path).mkdir(parents=True, exist_ok=True)
         return record
 
+    def get_checkpoint(self, checkpoint_id: str) -> TrainingCheckpointRecord | None:
+        registry = self._load_registry()
+        for item in registry:
+            if item.get("checkpoint_id") == checkpoint_id:
+                return TrainingCheckpointRecord.model_validate(item)
+        return None
+
+    def list_checkpoints(
+        self,
+        *,
+        advisor_profile_id: str | None = None,
+        status: str | None = None,
+    ) -> list[TrainingCheckpointRecord]:
+        registry = [TrainingCheckpointRecord.model_validate(item) for item in self._load_registry()]
+        if advisor_profile_id is not None:
+            registry = [item for item in registry if item.advisor_profile_id == advisor_profile_id]
+        if status is not None:
+            registry = [item for item in registry if item.status == status]
+        return registry
+
+    def get_active_checkpoint(self, advisor_profile_id: str) -> TrainingCheckpointRecord | None:
+        for item in self.list_checkpoints(advisor_profile_id=advisor_profile_id, status="active"):
+            return item
+        return None
+
     def promote_checkpoint(self, checkpoint_id: str) -> TrainingCheckpointRecord:
         registry = self._load_registry()
-        updated = []
-        active_record = None
+        promoted_record = None
+        promoted_profile_id = None
         for item in registry:
             if item["checkpoint_id"] == checkpoint_id:
                 item["status"] = "active"
-                active_record = TrainingCheckpointRecord.model_validate(item)
-            elif item.get("status") == "active":
+                promoted_profile_id = item.get("advisor_profile_id")
+                promoted_record = TrainingCheckpointRecord.model_validate(item)
+                break
+        if promoted_record is None:
+            raise ValueError(f"unknown checkpoint_id: {checkpoint_id}")
+
+        updated = []
+        for item in registry:
+            if item["checkpoint_id"] == checkpoint_id:
+                updated.append(item)
+                continue
+            if item.get("status") == "active" and item.get("advisor_profile_id") == promoted_profile_id:
                 item["status"] = "candidate"
             updated.append(item)
         self._write_registry(updated)
-        if active_record is None:
-            raise ValueError(f"unknown checkpoint_id: {checkpoint_id}")
-        return active_record
+        return promoted_record
 
     def rollback_to_checkpoint(self, checkpoint_id: str, *, reason: str) -> TrainingCheckpointRecord:
         registry = self._load_registry()
@@ -208,6 +256,71 @@ def run_profile_training_job(
     return lifecycle_manager.record_training_job(result, config=config)
 
 
+def evaluate_profile_checkpoint_for_promotion(
+    *,
+    advisor_profile_id: str,
+    candidate_checkpoint_id: str,
+    benchmark_manifests: list[BenchmarkRunManifest],
+    lifecycle_manager: CheckpointLifecycleManager,
+    promotion_threshold: float = 0.05,
+) -> ProfileCheckpointEvaluation:
+    candidate = lifecycle_manager.get_checkpoint(candidate_checkpoint_id)
+    if candidate is None:
+        raise ValueError(f"unknown checkpoint_id: {candidate_checkpoint_id}")
+    if candidate.advisor_profile_id != advisor_profile_id:
+        raise ValueError(
+            f"candidate checkpoint {candidate_checkpoint_id} does not belong to advisor profile {advisor_profile_id}"
+        )
+
+    filtered_manifests = [
+        manifest for manifest in benchmark_manifests if manifest.advisor_profile_id == advisor_profile_id
+    ]
+    if not filtered_manifests:
+        raise ValueError(f"no benchmark manifests found for advisor profile {advisor_profile_id}")
+
+    baseline_manifests = [manifest for manifest in filtered_manifests if manifest.routing_arm == "baseline"]
+    candidate_manifests = [manifest for manifest in filtered_manifests if manifest.routing_arm == "advisor"]
+    if not baseline_manifests or not candidate_manifests:
+        raise ValueError(f"benchmark manifests for advisor profile {advisor_profile_id} must include baseline and advisor arms")
+
+    baseline_summary = _summarize_benchmark_manifests(baseline_manifests)
+    candidate_summary = _summarize_benchmark_manifests(candidate_manifests)
+    decision = evaluate_trained_checkpoint(
+        checkpoint_id=candidate_checkpoint_id,
+        baseline_summary=baseline_summary,
+        candidate_summary=candidate_summary,
+        promotion_threshold=promotion_threshold,
+    )
+
+    active_checkpoint = lifecycle_manager.get_active_checkpoint(advisor_profile_id)
+    if decision["promote"]:
+        lifecycle_manager.promote_checkpoint(candidate_checkpoint_id)
+        decision_reason = (
+            f"promoted {candidate_checkpoint_id} for {advisor_profile_id}: overall_delta="
+            f"{decision['deltas']['overall_score']}, recall_delta={decision['deltas']['focus_target_recall']}"
+        )
+    else:
+        decision_reason = (
+            f"rolled back {candidate_checkpoint_id} for {advisor_profile_id}: overall_delta="
+            f"{decision['deltas']['overall_score']}, recall_delta={decision['deltas']['focus_target_recall']}"
+        )
+        lifecycle_manager.rollback_to_checkpoint(candidate_checkpoint_id, reason=decision_reason)
+
+    return ProfileCheckpointEvaluation(
+        advisor_profile_id=advisor_profile_id,
+        candidate_checkpoint_id=candidate_checkpoint_id,
+        active_checkpoint_id=active_checkpoint.checkpoint_id if active_checkpoint else None,
+        candidate_summary=candidate_summary,
+        baseline_summary=baseline_summary,
+        deltas=decision["deltas"],
+        promotion_threshold=promotion_threshold,
+        promote=decision["promote"],
+        rollback=decision["rollback"],
+        decision_reason=decision_reason,
+        benchmark_manifest_count=len(filtered_manifests),
+    )
+
+
 def selected_backend_request(
     *,
     job_id: str,
@@ -236,9 +349,13 @@ def evaluate_trained_checkpoint(
     candidate_summary: dict[str, float],
     promotion_threshold: float = 0.05,
 ) -> dict:
-    overall_delta = round(float(candidate_summary.get("overall_score", 0.0)) - float(baseline_summary.get("overall_score", 0.0)), 4)
+    overall_delta = round(
+        float(candidate_summary.get("overall_score", 0.0)) - float(baseline_summary.get("overall_score", 0.0)),
+        4,
+    )
     recall_delta = round(
-        float(candidate_summary.get("focus_target_recall", 0.0)) - float(baseline_summary.get("focus_target_recall", 0.0)),
+        float(candidate_summary.get("focus_target_recall", 0.0))
+        - float(baseline_summary.get("focus_target_recall", 0.0)),
         4,
     )
     promote = overall_delta >= promotion_threshold
@@ -253,4 +370,16 @@ def evaluate_trained_checkpoint(
         },
         "promote": promote,
         "rollback": rollback,
+    }
+
+
+def _summarize_benchmark_manifests(manifests: list[BenchmarkRunManifest]) -> dict[str, float]:
+    overall_scores = [float(item.score.get("overall_score", 0.0)) for item in manifests]
+    recall_scores = [float(item.score.get("focus_target_recall", 0.0)) for item in manifests]
+    count = len(manifests)
+    if count == 0:
+        return {"overall_score": 0.0, "focus_target_recall": 0.0}
+    return {
+        "overall_score": round(sum(overall_scores) / count, 4),
+        "focus_target_recall": round(sum(recall_scores) / count, 4),
     }

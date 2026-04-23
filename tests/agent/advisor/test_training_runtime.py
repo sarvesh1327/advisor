@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from agent.advisor import ProfileCheckpointEvaluation, evaluate_profile_checkpoint_for_promotion
 from agent.advisor.benchmark import BenchmarkRunManifest
 from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
@@ -179,6 +180,163 @@ def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(
     assert manifest["rollout_group_id"] == "group-train"
     assert checkpoint_registry[0]["advisor_profile_id"] == "coding-default"
     assert checkpoint_registry[0]["status"] == "candidate"
+    assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
+
+
+def test_checkpoint_lifecycle_manager_filters_active_checkpoints_by_profile(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-active",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-active"),
+            status="active",
+            advisor_profile_id="coding-default",
+        )
+    )
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="ui-active",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "ui-active"),
+            status="active",
+            advisor_profile_id="image-ui",
+        )
+    )
+
+    coding_active = manager.get_active_checkpoint("coding-default")
+    ui_active = manager.get_active_checkpoint("image-ui")
+    coding_records = manager.list_checkpoints(advisor_profile_id="coding-default")
+
+    assert coding_active is not None
+    assert coding_active.checkpoint_id == "coding-active"
+    assert ui_active is not None
+    assert ui_active.checkpoint_id == "ui-active"
+    assert [record.checkpoint_id for record in coding_records] == ["coding-active"]
+
+
+def test_evaluate_profile_checkpoint_for_promotion_promotes_passing_candidate(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-active",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-active"),
+            status="active",
+            advisor_profile_id="coding-default",
+        )
+    )
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-candidate",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-candidate"),
+            status="candidate",
+            advisor_profile_id="coding-default",
+        )
+    )
+    manifests = [
+        _benchmark_manifest("baseline-run", arm="baseline", overall_score=0.55).model_copy(
+            update={"advisor_profile_id": "coding-default"}
+        ),
+        _benchmark_manifest("candidate-run", arm="advisor", overall_score=0.82).model_copy(
+            update={"advisor_profile_id": "coding-default"}
+        ),
+        _benchmark_manifest("other-profile-run", arm="advisor", overall_score=0.99).model_copy(
+            update={"advisor_profile_id": "image-ui"}
+        ),
+    ]
+
+    evaluation = evaluate_profile_checkpoint_for_promotion(
+        advisor_profile_id="coding-default",
+        candidate_checkpoint_id="coding-candidate",
+        benchmark_manifests=manifests,
+        lifecycle_manager=manager,
+        promotion_threshold=0.1,
+    )
+
+    assert isinstance(evaluation, ProfileCheckpointEvaluation)
+    assert evaluation.promote is True
+    assert evaluation.rollback is False
+    assert evaluation.active_checkpoint_id == "coding-active"
+    assert evaluation.benchmark_manifest_count == 2
+    assert manager.get_active_checkpoint("coding-default").checkpoint_id == "coding-candidate"
+
+
+def test_evaluate_profile_checkpoint_for_promotion_rolls_back_failing_candidate(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-active",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-active"),
+            status="active",
+            advisor_profile_id="coding-default",
+        )
+    )
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-candidate",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-candidate"),
+            status="candidate",
+            advisor_profile_id="coding-default",
+        )
+    )
+    manifests = [
+        _benchmark_manifest("baseline-run", arm="baseline", overall_score=0.85).model_copy(
+            update={"advisor_profile_id": "coding-default"}
+        ),
+        _benchmark_manifest("candidate-run", arm="advisor", overall_score=0.62).model_copy(
+            update={"advisor_profile_id": "coding-default"}
+        ),
+    ]
+
+    evaluation = evaluate_profile_checkpoint_for_promotion(
+        advisor_profile_id="coding-default",
+        candidate_checkpoint_id="coding-candidate",
+        benchmark_manifests=manifests,
+        lifecycle_manager=manager,
+        promotion_threshold=0.1,
+    )
+
+    candidate_record = manager.get_checkpoint("coding-candidate")
+    assert evaluation.promote is False
+    assert evaluation.rollback is True
+    assert "coding-default" in evaluation.decision_reason
+    assert candidate_record is not None
+    assert candidate_record.status == "rolled_back"
+    assert candidate_record.rollback_reason == evaluation.decision_reason
+
+
+def test_evaluate_profile_checkpoint_for_promotion_rejects_missing_profile_manifests(tmp_path):
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id="coding-candidate",
+            experiment_id="exp-14",
+            path=str(tmp_path / "artifacts" / "checkpoints" / "coding-candidate"),
+            status="candidate",
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    try:
+        evaluate_profile_checkpoint_for_promotion(
+            advisor_profile_id="coding-default",
+            candidate_checkpoint_id="coding-candidate",
+            benchmark_manifests=[
+                _benchmark_manifest("other-profile-run", arm="advisor", overall_score=0.91).model_copy(
+                    update={"advisor_profile_id": "image-ui"}
+                )
+            ],
+            lifecycle_manager=manager,
+            promotion_threshold=0.1,
+        )
+    except ValueError as exc:
+        assert "benchmark manifests" in str(exc)
+    else:
+        raise AssertionError("expected missing profile-local manifests to raise ValueError")
 
 
 def test_run_profile_training_job_rejects_profiles_without_training_config(tmp_path):

@@ -130,6 +130,7 @@ Core rule:
 - [x] Add checkpoint promotion / rollback based on benchmark outcomes
 - [x] Persist exact experiment manifests for each training run
 - [x] Record profile-local GRPO backend artifacts and profile-owned candidate checkpoints
+- [x] Gate profile promotion on profile-local benchmark deltas with explicit rollback reasons
 
 ## Phase 15 — Operator surface and deployment path
 - [x] Add deployable single-tenant and hosted/service operating paths
