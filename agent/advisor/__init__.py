@@ -57,7 +57,7 @@ from .orchestration import (
     RubricVerifier,
     ScreenshotComparisonVerifier,
 )
-from .profiles import AdvisorProfile, AdvisorProfileRegistry
+from .profiles import AdvisorProfile, AdvisorProfileRegistry, AdvisorTrainingConfig
 from .results_pass import (
     build_failure_taxonomy,
     build_phase16_results_report,
@@ -78,6 +78,7 @@ from .schemas import (
     AdvisorTaskRunResult,
 )
 from .settings import AdvisorSettings
+from .training_backends import GRPOTrainingBackend, TrainingBackendRunRequest, TrainingBackendRunResult
 from .training_rollouts import (
     RolloutTurnRecord,
     TrainingRolloutGroupRequest,
@@ -93,6 +94,7 @@ from .training_runtime import (
     TrainingJobConfig,
     TrainingJobResult,
     evaluate_trained_checkpoint,
+    run_profile_training_job,
 )
 from .version import __version__
 
@@ -103,6 +105,7 @@ __all__ = [
     "AdvisorGateway",
     "AdvisorProfile",
     "AdvisorProfileRegistry",
+    "AdvisorTrainingConfig",
     "AdvisorInputPacket",
     "AdvisorOrchestrator",
     "AdvisorOutcome",
@@ -127,6 +130,7 @@ __all__ = [
     "DomainWorkerSubprocessExecutor",
     "FrontierChatExecutor",
     "FrontierHTTPExecutor",
+    "GRPOTrainingBackend",
     "HumanReviewFileVerifier",
     "HumanReviewVerifier",
     "IntegrationRegistry",
@@ -141,6 +145,8 @@ __all__ = [
     "ScreenshotComparisonVerifier",
     "ScreenshotHashVerifier",
     "TrainingCheckpointRecord",
+    "TrainingBackendRunRequest",
+    "TrainingBackendRunResult",
     "TrainingJobConfig",
     "TrainingJobResult",
     "TrainingRolloutGroupRequest",
@@ -169,6 +175,7 @@ __all__ = [
     "import_product_bundle",
     "lock_truth_surface_contract",
     "redact_packet",
+    "run_profile_training_job",
     "run_task",
     "summarize_ablation_results",
     "summarize_canonical_study",

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from agent.advisor.benchmark import BenchmarkRunManifest
+from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
 from agent.advisor.training_runtime import (
     CheckpointLifecycleManager,
@@ -9,6 +10,7 @@ from agent.advisor.training_runtime import (
     TrainingJobConfig,
     TrainingJobResult,
     evaluate_trained_checkpoint,
+    run_profile_training_job,
 )
 
 
@@ -133,3 +135,85 @@ def test_evaluate_trained_checkpoint_reports_promotion_decision_and_regression_s
     assert report["deltas"]["overall_score"] == 0.23
     assert regression["promote"] is False
     assert regression["rollback"] is True
+
+
+def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(tmp_path):
+    registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    rollout_group = TrainingRolloutGroupResult(
+        group_id="group-train",
+        advisor_profile_id="coding-default",
+        results=[
+            TrainingRolloutResult(
+                rollout_id="rollout-1",
+                advisor_profile_id="coding-default",
+                packet={"run_id": "run-1"},
+                primary_advice={"recommended_plan": ["inspect main.py"]},
+                executor_result={"status": "success"},
+                verifier_results=[],
+                outcome={"status": "success"},
+                reward_label={"total_reward": 0.8},
+                diagnostics={"multi_turn": False},
+            )
+        ],
+        reward_values=[0.8],
+        summary={"mean_reward": 0.8},
+    )
+
+    result = run_profile_training_job(
+        job_id="job-2",
+        experiment_id="exp-14",
+        advisor_profile_id="coding-default",
+        rollout_group=rollout_group,
+        profile_registry=registry,
+        lifecycle_manager=manager,
+    )
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    checkpoint_registry = json.loads((tmp_path / "artifacts" / "checkpoint_registry.json").read_text(encoding="utf-8"))
+
+    assert result.advisor_profile_id == "coding-default"
+    assert result.backend_name == "grpo"
+    assert manifest["advisor_profile_id"] == "coding-default"
+    assert manifest["backend_name"] == "grpo"
+    assert manifest["rollout_group_id"] == "group-train"
+    assert checkpoint_registry[0]["advisor_profile_id"] == "coding-default"
+    assert checkpoint_registry[0]["status"] == "candidate"
+
+
+def test_run_profile_training_job_rejects_profiles_without_training_config(tmp_path):
+    profiles_path = tmp_path / "profiles.toml"
+    profiles_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    registry = AdvisorProfileRegistry.from_toml(profiles_path)
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+    rollout_group = TrainingRolloutGroupResult(
+        group_id="group-train",
+        advisor_profile_id="coding-default",
+        results=[],
+        reward_values=[],
+        summary={},
+    )
+
+    try:
+        run_profile_training_job(
+            job_id="job-3",
+            experiment_id="exp-14",
+            advisor_profile_id="coding-default",
+            rollout_group=rollout_group,
+            profile_registry=registry,
+            lifecycle_manager=manager,
+        )
+    except ValueError as exc:
+        assert "training config" in str(exc)
+    else:
+        raise AssertionError("expected missing training config to raise ValueError")

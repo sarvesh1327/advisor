@@ -6,11 +6,22 @@ from pathlib import Path
 from pydantic import BaseModel, Field, model_validator
 
 
+class AdvisorTrainingConfig(BaseModel):
+    backend: str
+    rollout_group_size: int
+    num_generations: int
+    max_steps: int
+    max_prompt_tokens: int
+    max_completion_tokens: int
+    checkpoint_root: str
+
+
 class AdvisorProfile(BaseModel):
     profile_id: str
     domain: str
     description: str | None = None
     reward_spec_id: str | None = None
+    training: AdvisorTrainingConfig | None = None
 
 
 class AdvisorProfileRegistry(BaseModel):
