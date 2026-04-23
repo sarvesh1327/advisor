@@ -106,6 +106,7 @@ from .training_runtime import (
     TrainingJobResult,
     evaluate_profile_checkpoint_for_promotion,
     evaluate_trained_checkpoint,
+    resolve_active_profile_checkpoint_metadata,
     run_profile_training_job,
 )
 from .version import __version__
@@ -194,6 +195,7 @@ __all__ = [
     "import_product_bundle",
     "lock_truth_surface_contract",
     "redact_packet",
+    "resolve_active_profile_checkpoint_metadata",
     "run_operator_job",
     "run_profile_training_job",
     "run_task",

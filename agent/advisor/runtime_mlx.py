@@ -10,6 +10,7 @@ from pathlib import Path
 from .profiles import AdvisorProfileRegistry
 from .schemas import AdviceBlock
 from .settings import AdvisorSettings
+from .training_runtime import CheckpointLifecycleManager, resolve_active_profile_checkpoint_metadata
 
 try:
     # MLX stays optional so the module can still import in fallback-only or test environments.
@@ -32,6 +33,8 @@ class MLXAdvisorRuntime:
         self._model = None
         self._tokenizer = None
         self._active_model_name = settings.model_name
+        self._active_adapter_path: str | None = None
+        self._loaded_profile_id: str | None = None
 
     @property
     def prompt_hash_seed(self) -> str:
@@ -61,6 +64,8 @@ class MLXAdvisorRuntime:
             "reason": reason,
             "model_name": self.settings.model_name,
             "active_model_name": self._active_model_name,
+            "active_adapter_path": self._active_adapter_path,
+            "loaded_profile_id": self._loaded_profile_id,
             "model_version": self.settings.model_version,
         }
 
@@ -70,6 +75,15 @@ class MLXAdvisorRuntime:
         except RuntimeError:
             if not self.settings.enable_fallback_runtime:
                 raise
+
+    def _artifacts_root(self) -> Path:
+        return Path(self.settings.trace_db_path).expanduser().parent / "artifacts"
+
+    def _load_profile_registry(self) -> AdvisorProfileRegistry | None:
+        profiles_path = Path(self.settings.advisor_profiles_path).expanduser()
+        if not profiles_path.exists():
+            return None
+        return AdvisorProfileRegistry.from_toml(profiles_path)
 
     def resolve_profile_training_spec(
         self,
@@ -106,26 +120,80 @@ class MLXAdvisorRuntime:
                 return str(candidate)
         raise FileNotFoundError(f"missing adapter artifact under checkpoint dir: {root}")
 
-    def _ensure_loaded(self):
-        if self._model is not None and self._tokenizer is not None:
+    def resolve_active_profile_adapter_metadata(self, advisor_profile_id: str | None = None) -> dict | None:
+        # Active checkpoints are optional; when present they must resolve to a loadable adapter directory.
+        resolved_profile_id = advisor_profile_id or self.settings.advisor_profile_id
+        lifecycle_manager = CheckpointLifecycleManager(self._artifacts_root())
+        try:
+            checkpoint_metadata = resolve_active_profile_checkpoint_metadata(
+                advisor_profile_id=resolved_profile_id,
+                lifecycle_manager=lifecycle_manager,
+            )
+        except ValueError:
+            return None
+
+        registry = self._load_profile_registry()
+        base_model_name = self.settings.model_name
+        if registry is not None:
+            training_spec = self.resolve_profile_training_spec(registry, resolved_profile_id)
+            base_model_name = training_spec["base_model_name"]
+        adapter_artifact_path = self.resolve_adapter_artifact(checkpoint_metadata["checkpoint_path"])
+        return {
+            **checkpoint_metadata,
+            "advisor_profile_id": resolved_profile_id,
+            "base_model_name": base_model_name,
+            "adapter_artifact_path": adapter_artifact_path,
+            "adapter_dir": str(Path(adapter_artifact_path).parent),
+        }
+
+    def _ensure_loaded(self, advisor_profile_id: str | None = None):
+        resolved_profile_id = advisor_profile_id or self.settings.advisor_profile_id
+        adapter_metadata = self.resolve_active_profile_adapter_metadata(resolved_profile_id)
+        target_model_name = self.settings.model_name
+        target_adapter_dir = None
+        target_adapter_path = None
+        if adapter_metadata is not None:
+            target_model_name = str(adapter_metadata["base_model_name"])
+            target_adapter_dir = str(adapter_metadata["adapter_dir"])
+            target_adapter_path = str(adapter_metadata["adapter_artifact_path"])
+
+        if (
+            self._model is not None
+            and self._tokenizer is not None
+            and self._active_model_name == target_model_name
+            and self._active_adapter_path == target_adapter_path
+            and self._loaded_profile_id == resolved_profile_id
+        ):
             return self._model, self._tokenizer
         if mlx_lm_load is None:
             raise RuntimeError(_MLX_MISSING_REASON)
 
         try:
-            self._model, self._tokenizer = mlx_lm_load(self.settings.model_name)
-            self._active_model_name = self.settings.model_name
+            if target_adapter_dir is not None:
+                self._model, self._tokenizer = mlx_lm_load(target_model_name, adapter_path=target_adapter_dir)
+            else:
+                self._model, self._tokenizer = mlx_lm_load(target_model_name)
+            self._active_model_name = target_model_name
+            self._active_adapter_path = target_adapter_path
+            self._loaded_profile_id = resolved_profile_id
         except Exception:
             # Fallback model loading is only for degraded continuity, not silent model switching.
-            if not self.settings.fallback_model_name:
+            if target_adapter_dir is not None or not self.settings.fallback_model_name:
                 raise
             self._model, self._tokenizer = mlx_lm_load(self.settings.fallback_model_name)
             self._active_model_name = self.settings.fallback_model_name
+            self._active_adapter_path = None
+            self._loaded_profile_id = resolved_profile_id
         return self._model, self._tokenizer
 
-    def generate_advice(self, packet, system_prompt: str | None = None) -> AdviceBlock:
+    def generate_advice(
+        self,
+        packet,
+        system_prompt: str | None = None,
+        advisor_profile_id: str | None = None,
+    ) -> AdviceBlock:
         try:
-            model, tokenizer = self._ensure_loaded()
+            model, tokenizer = self._ensure_loaded(advisor_profile_id=advisor_profile_id)
             if mlx_lm_generate is None or mlx_make_sampler is None:
                 raise RuntimeError(_MLX_MISSING_REASON)
         except Exception as exc:

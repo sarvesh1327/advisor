@@ -192,6 +192,31 @@ class CheckpointLifecycleManager:
         self.registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True), encoding="utf-8")
 
 
+
+def resolve_active_profile_checkpoint_metadata(
+    *,
+    advisor_profile_id: str,
+    lifecycle_manager: CheckpointLifecycleManager,
+) -> dict:
+    # Runtime loads should resolve through the same profile-local checkpoint registry used by promotion.
+    active_checkpoint = lifecycle_manager.get_active_checkpoint(advisor_profile_id)
+    if active_checkpoint is None:
+        raise ValueError(f"no active checkpoint found for advisor profile {advisor_profile_id}")
+    checkpoint_path = Path(active_checkpoint.path)
+    manifest_path = checkpoint_path / "checkpoint.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"missing checkpoint manifest for active checkpoint: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return {
+        "checkpoint_id": active_checkpoint.checkpoint_id,
+        "checkpoint_path": str(checkpoint_path),
+        "manifest_path": str(manifest_path),
+        "artifact_paths": dict(manifest.get("artifact_paths") or {}),
+        "manifest": manifest,
+    }
+
+
+
 def run_profile_training_job(
     *,
     job_id: str,

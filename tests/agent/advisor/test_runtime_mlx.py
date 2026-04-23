@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -186,6 +187,253 @@ def test_runtime_raises_clear_error_when_adapter_artifact_is_missing(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="adapter artifact"):
         runtime.resolve_adapter_artifact(checkpoint_dir)
+
+
+
+def test_runtime_resolves_active_profile_adapter_metadata_from_promoted_checkpoint(tmp_path):
+    profiles_path = tmp_path / "profiles.toml"
+    profiles_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+                'description = "Default coding advisor profile"',
+                "",
+                "[profiles.coding-default.training]",
+                'backend = "grpo"',
+                'base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"',
+                'adapter_method = "lora"',
+                'rollout_group_size = 4',
+                'num_generations = 8',
+                'max_steps = 12',
+                'max_prompt_tokens = 4096',
+                'max_completion_tokens = 1024',
+                'checkpoint_root = "checkpoints/coding-default"',
+                'target_modules = ["q_proj"]',
+                'lora_rank = 32',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    artifacts_root = tmp_path / "artifacts"
+    checkpoint_dir = artifacts_root / "checkpoints" / "coding-default" / "coding-active"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "adapters.safetensors").write_bytes(b"adapter")
+    (checkpoint_dir / "adapter_config.json").write_text(
+        json.dumps({"base_model_name": "mlx-community/Qwen2.5-3B-Instruct-4bit"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "coding-active",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {
+                    "adapter_model": str(checkpoint_dir / "adapters.safetensors"),
+                    "adapter_config": str(checkpoint_dir / "adapter_config.json"),
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_root / "checkpoint_registry.json").write_text(
+        json.dumps(
+            [
+                {
+                    "checkpoint_id": "coding-active",
+                    "experiment_id": "exp-14",
+                    "path": str(checkpoint_dir),
+                    "status": "active",
+                    "benchmark_summary": {},
+                    "rollback_reason": None,
+                    "advisor_profile_id": "coding-default",
+                }
+            ],
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    runtime = MLXAdvisorRuntime(
+        AdvisorSettings(
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profiles_path=str(profiles_path),
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    metadata = runtime.resolve_active_profile_adapter_metadata("coding-default")
+
+    assert metadata["checkpoint_id"] == "coding-active"
+    assert metadata["adapter_artifact_path"] == str(checkpoint_dir / "adapters.safetensors")
+    assert metadata["base_model_name"] == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+
+
+
+def test_runtime_loads_active_profile_adapter_when_present(monkeypatch, tmp_path):
+    calls = []
+    profiles_path = tmp_path / "profiles.toml"
+    profiles_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+                'description = "Default coding advisor profile"',
+                "",
+                "[profiles.coding-default.training]",
+                'backend = "grpo"',
+                'base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"',
+                'adapter_method = "lora"',
+                'rollout_group_size = 4',
+                'num_generations = 8',
+                'max_steps = 12',
+                'max_prompt_tokens = 4096',
+                'max_completion_tokens = 1024',
+                'checkpoint_root = "checkpoints/coding-default"',
+                'target_modules = ["q_proj"]',
+                'lora_rank = 32',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    artifacts_root = tmp_path / "artifacts"
+    checkpoint_dir = artifacts_root / "checkpoints" / "coding-default" / "coding-active"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "adapters.safetensors").write_bytes(b"adapter")
+    (checkpoint_dir / "adapter_config.json").write_text(json.dumps({"fine_tune_type": "lora"}), encoding="utf-8")
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "coding-active",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {
+                    "adapter_model": str(checkpoint_dir / "adapters.safetensors"),
+                    "adapter_config": str(checkpoint_dir / "adapter_config.json"),
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_root / "checkpoint_registry.json").write_text(
+        json.dumps(
+            [
+                {
+                    "checkpoint_id": "coding-active",
+                    "experiment_id": "exp-14",
+                    "path": str(checkpoint_dir),
+                    "status": "active",
+                    "benchmark_summary": {},
+                    "rollback_reason": None,
+                    "advisor_profile_id": "coding-default",
+                }
+            ],
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_load(model_name, *, adapter_path=None):
+        calls.append({"model_name": model_name, "adapter_path": adapter_path})
+        return SimpleNamespace(), StubTokenizer()
+
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_load", fake_load)
+    runtime = MLXAdvisorRuntime(
+        AdvisorSettings(
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profiles_path=str(profiles_path),
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    runtime._ensure_loaded(advisor_profile_id="coding-default")
+
+    assert calls == [
+        {
+            "model_name": "mlx-community/Qwen2.5-3B-Instruct-4bit",
+            "adapter_path": str(checkpoint_dir),
+        }
+    ]
+    assert runtime.capabilities()["active_model_name"] == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+
+
+
+def test_runtime_rejects_active_checkpoint_without_real_adapter_artifact(monkeypatch, tmp_path):
+    profiles_path = tmp_path / "profiles.toml"
+    profiles_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+                'description = "Default coding advisor profile"',
+                "",
+                "[profiles.coding-default.training]",
+                'backend = "grpo"',
+                'base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"',
+                'adapter_method = "lora"',
+                'rollout_group_size = 4',
+                'num_generations = 8',
+                'max_steps = 12',
+                'max_prompt_tokens = 4096',
+                'max_completion_tokens = 1024',
+                'checkpoint_root = "checkpoints/coding-default"',
+                'target_modules = ["q_proj"]',
+                'lora_rank = 32',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    artifacts_root = tmp_path / "artifacts"
+    checkpoint_dir = artifacts_root / "checkpoints" / "coding-default" / "coding-active"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "coding-active",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {
+                    "adapter_model": str(checkpoint_dir / "adapters.safetensors"),
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_root / "checkpoint_registry.json").write_text(
+        json.dumps(
+            [
+                {
+                    "checkpoint_id": "coding-active",
+                    "experiment_id": "exp-14",
+                    "path": str(checkpoint_dir),
+                    "status": "active",
+                    "benchmark_summary": {},
+                    "rollback_reason": None,
+                    "advisor_profile_id": "coding-default",
+                }
+            ],
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_load", lambda *_args, **_kwargs: (SimpleNamespace(), StubTokenizer()))
+    runtime = MLXAdvisorRuntime(
+        AdvisorSettings(
+            enable_fallback_runtime=False,
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profiles_path=str(profiles_path),
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    with pytest.raises(FileNotFoundError, match="adapter artifact"):
+        runtime._ensure_loaded(advisor_profile_id="coding-default")
 
 
 
