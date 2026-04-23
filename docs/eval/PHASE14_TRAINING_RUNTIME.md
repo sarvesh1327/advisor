@@ -37,7 +37,9 @@ The repo now provides:
   - returns replay-friendly rollout artifacts carrying packet, advice, executor output, verifier outputs, reward label, and diagnostics
 - `training_backends.py`
   - defines the profile-local GRPO backend request/result contract
-  - consumes rollout-group artifacts and emits deterministic checkpoint/backend manifests
+  - transforms rollout groups into deterministic training samples
+  - writes loadable LoRA adapter artifacts (`adapters.safetensors`, `adapter_config.json`) alongside checkpoint/backend manifests
+  - merges trainer-derived metrics into the persisted training surface
 - `run_profile_training_job()`
   - resolves advisor profile training config
   - records rollout-group artifacts for the job
@@ -56,7 +58,9 @@ Phase 14 plus the Phase D rollout extension now standardize this artifact layout
 - `artifacts/training-jobs/<job_id>/training-manifest.json`
 - `artifacts/training-jobs/<job_id>/rollout-group.json`
 - `artifacts/training-jobs/<job_id>/backend-manifest.json`
-- `artifacts/checkpoints/<profile_id>/<checkpoint_id>/`
+- `artifacts/checkpoints/<profile_id>/<checkpoint_id>/adapter_config.json`
+- `artifacts/checkpoints/<profile_id>/<checkpoint_id>/adapters.safetensors`
+- `artifacts/checkpoints/<profile_id>/<checkpoint_id>/checkpoint.json`
 
 This gives later real trainer backends a stable place to write outputs and consume rollout artifacts.
 
