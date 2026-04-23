@@ -14,6 +14,10 @@ from agent.advisor.evaluation.benchmark import BenchmarkRunManifest, compare_ben
 from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.storage.observability import export_live_metrics
 from agent.advisor.storage.trace_store import AdvisorTraceStore
+from agent.advisor.training.hardening import (
+    build_phase6_hardening_report,
+    build_phase6_promotion_guard,
+)
 from agent.advisor.training.training_rollouts import TrainingRolloutGroupResult
 from agent.advisor.training.training_runtime import (
     CheckpointLifecycleManager,
@@ -391,6 +395,14 @@ def run_continuous_training_cycle(
     eval_profile_fn: Any | None = None,
     promote_checkpoint_fn: Any | None = None,
 ) -> dict:
+    hardening_report = build_phase6_hardening_report(
+        rollout_group=rollout_group,
+        advisor_profile_id=advisor_profile_id,
+    )
+    if hardening_report["blocking"]:
+        issue_codes = ", ".join(issue["code"] for issue in hardening_report["issues"])
+        raise ValueError(f"blocking rollout hardening issues: {issue_codes}")
+
     cycle_key = f"continuous:{experiment_id}:{advisor_profile_id}"
     train_payload = TrainProfileJobPayload(
         experiment_id=experiment_id,
@@ -535,10 +547,13 @@ def _run_promote_checkpoint_job(
     promote_checkpoint_fn: Any | None,
 ) -> dict:
     evaluation = payload.evaluation or {}
-    if evaluation.get("advisor_profile_id") != payload.advisor_profile_id:
-        raise ValueError("promotion evaluation advisor_profile_id does not match payload")
-    if evaluation.get("candidate_checkpoint_id") != payload.candidate_checkpoint_id:
-        raise ValueError("promotion evaluation candidate_checkpoint_id does not match payload")
+    blocked = build_phase6_promotion_guard(
+        evaluation=evaluation,
+        advisor_profile_id=payload.advisor_profile_id,
+        candidate_checkpoint_id=payload.candidate_checkpoint_id,
+    )
+    if blocked is not None:
+        return blocked
     if evaluation.get("promote") is not True:
         raise ValueError("promote-checkpoint requires prior passing evaluation evidence")
 

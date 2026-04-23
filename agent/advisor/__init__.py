@@ -86,6 +86,7 @@ from .storage.observability import (
     export_live_metrics,
     redact_packet,
 )
+from .training.hardening import build_phase6_hardening_report
 from .training.training_backends import (
     GRPOTrainingBackend,
     MLXLoRATrainer,
@@ -184,6 +185,7 @@ __all__ = [
     "build_failure_taxonomy",
     "build_operator_snapshot",
     "build_phase5_measurement_report",
+    "build_phase6_hardening_report",
     "build_phase16_results_report",
     "compare_benchmark_arms",
     "create_gateway",
