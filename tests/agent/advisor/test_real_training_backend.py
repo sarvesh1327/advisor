@@ -6,6 +6,7 @@ from agent.advisor.training.training_backends import (
     GRPOTrainingBackend,
     GRPOTrainingSample,
     TrainingBackendRunRequest,
+    build_grpo_training_groups,
     build_grpo_training_samples,
 )
 from agent.advisor.training.training_rollouts import TrainingRolloutGroupResult, TrainingRolloutResult
@@ -89,12 +90,16 @@ class RecordingTrainer:
     def __init__(self):
         self.calls = []
 
-    def train(self, request, checkpoint_dir, training_samples):
+    def train(self, request, checkpoint_dir, training_groups):
+        flattened_candidates = [candidate for group in training_groups for candidate in group.candidates]
         self.calls.append(
             {
                 "checkpoint_dir": str(checkpoint_dir),
-                "sample_count": len(training_samples),
-                "rewards": [sample.reward for sample in training_samples],
+                "group_count": len(training_groups),
+                "candidate_count": len(flattened_candidates),
+                "rewards": [candidate.reward for candidate in flattened_candidates],
+                "advantages": [candidate.advantage for candidate in flattened_candidates],
+                "group_ids": [group.group_id for group in training_groups],
             }
         )
         adapter_path = checkpoint_dir / "adapters.safetensors"
@@ -120,9 +125,68 @@ class RecordingTrainer:
             "metrics": {
                 "train_loss": 0.2,
                 "optimizer_steps": 8,
-                "trained_examples": len(training_samples),
+                "trained_examples": len(flattened_candidates),
             },
         }
+
+
+
+def test_build_grpo_training_groups_preserves_grouped_candidates_and_advantages():
+    request = _training_request()
+
+    groups = build_grpo_training_groups(request)
+
+    assert len(groups) == 1
+    group = groups[0]
+    assert group.group_id == "group-1"
+    assert group.profile_id == "coding-default"
+    assert group.reward_mean == 0.625
+    assert group.reward_std == 0.125
+    assert [candidate.reward for candidate in group.candidates] == [0.75, 0.5]
+    assert [candidate.advantage for candidate in group.candidates] == [1.0, -1.0]
+    assert [candidate.group_id for candidate in group.candidates] == ["group-1", "group-1"]
+    assert [candidate.candidate_index for candidate in group.candidates] == [0, 1]
+    assert [candidate.provenance["rollout_id"] for candidate in group.candidates] == ["rollout-1", "rollout-2"]
+
+    first_prompt = json.loads(group.candidates[0].prompt)
+    first_completion = json.loads(group.candidates[0].completion)
+    second_prompt = json.loads(group.candidates[1].prompt)
+    second_completion = json.loads(group.candidates[1].completion)
+
+    assert first_prompt["task_text"] == "repair main.py"
+    assert second_prompt["task_text"] == "repair utils.py"
+    assert first_completion["recommended_plan"] == ["inspect main.py", "run pytest -q"]
+    assert second_completion["recommended_plan"] == ["inspect utils.py", "run pytest tests/test_utils.py -q"]
+
+
+
+def test_build_grpo_training_groups_changes_advantages_when_only_rewards_change():
+    request = _training_request()
+    low_reward_result = request.rollout_group.results[0].model_copy(
+        update={"reward_label": {"total_reward": 0.1}}
+    )
+    high_reward_result = request.rollout_group.results[1].model_copy(
+        update={"reward_label": {"total_reward": 0.9}}
+    )
+    mutated_request = request.model_copy(
+        update={
+            "rollout_group": request.rollout_group.model_copy(
+                update={
+                    "results": [low_reward_result, high_reward_result],
+                    "reward_values": [0.1, 0.9],
+                    "summary": {"mean_reward": 0.5},
+                }
+            )
+        }
+    )
+
+    baseline_groups = build_grpo_training_groups(request)
+    mutated_groups = build_grpo_training_groups(mutated_request)
+
+    assert [candidate.reward for candidate in baseline_groups[0].candidates] == [0.75, 0.5]
+    assert [candidate.reward for candidate in mutated_groups[0].candidates] == [0.1, 0.9]
+    assert [candidate.advantage for candidate in baseline_groups[0].candidates] == [1.0, -1.0]
+    assert [candidate.advantage for candidate in mutated_groups[0].candidates] == [-1.0, 1.0]
 
 
 
@@ -171,8 +235,11 @@ def test_grpo_training_backend_records_trainer_metrics_and_adapter_artifacts(tmp
     config_path = Path(result.artifact_paths["adapter_config"])
     checkpoint_manifest = json.loads(Path(result.artifact_paths["checkpoint_manifest"]).read_text(encoding="utf-8"))
 
-    assert trainer.calls[0]["sample_count"] == 2
+    assert trainer.calls[0]["group_count"] == 1
+    assert trainer.calls[0]["candidate_count"] == 2
+    assert trainer.calls[0]["group_ids"] == ["group-1"]
     assert trainer.calls[0]["rewards"] == [0.75, 0.5]
+    assert trainer.calls[0]["advantages"] == [1.0, -1.0]
     assert adapter_path.exists()
     assert config_path.exists()
     assert result.training_metrics["train_loss"] == 0.2

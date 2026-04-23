@@ -46,7 +46,8 @@ The repo now provides:
   - returns replay-friendly rollout artifacts carrying packet, advice, executor output, verifier outputs, reward label, and diagnostics
 - `training_backends.py`
   - defines the profile-local GRPO backend request/result contract
-  - transforms rollout groups into deterministic training samples
+  - transforms rollout groups into deterministic grouped candidates with normalized reward-aware advantages
+  - feeds those grouped advantages into the MLX trainer through a custom weighted GRPO loss hook
   - writes loadable LoRA adapter artifacts (`adapters.safetensors`, `adapter_config.json`) alongside checkpoint/backend manifests
   - merges trainer-derived metrics into the persisted training surface
 - `run_profile_training_job()`
