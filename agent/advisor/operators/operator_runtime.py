@@ -23,6 +23,13 @@ from agent.advisor.training.training_runtime import (
 SUPPORTED_OPERATOR_JOB_TYPES = {"train-profile", "eval-profile", "promote-checkpoint"}
 
 
+class ContinuousTrainingCycleResult(BaseModel):
+    train_job: dict
+    eval_job: dict
+    promote_job: dict | None = None
+    promoted: bool = False
+
+
 class DeploymentProfile(BaseModel):
     mode: Literal["single_tenant", "hosted"]
     bind_host: str
@@ -368,6 +375,102 @@ def run_operator_job(
     return queue.update_job(job_id, status="completed", result=normalized_result)
 
 
+def run_continuous_training_cycle(
+    queue: OperatorJobQueue,
+    *,
+    experiment_id: str,
+    advisor_profile_id: str,
+    rollout_group: dict,
+    benchmark_manifests: list[dict],
+    promotion_threshold: float = 0.05,
+    settings: AdvisorSettings | None = None,
+    profile_registry: AdvisorProfileRegistry | None = None,
+    lifecycle_manager: CheckpointLifecycleManager | None = None,
+    train_profile_fn: Any | None = None,
+    eval_profile_fn: Any | None = None,
+    promote_checkpoint_fn: Any | None = None,
+) -> dict:
+    cycle_key = f"continuous:{experiment_id}:{advisor_profile_id}"
+    train_job = _enqueue_or_reuse_job(
+        queue,
+        job_type="train-profile",
+        payload=TrainProfileJobPayload(
+            experiment_id=experiment_id,
+            advisor_profile_id=advisor_profile_id,
+            rollout_group=rollout_group,
+            benchmark_manifests=benchmark_manifests,
+        ).model_dump(),
+        resume_token=f"{cycle_key}:train",
+    )
+    train_record = run_operator_job(
+        queue,
+        train_job.job_id,
+        settings=settings,
+        profile_registry=profile_registry,
+        lifecycle_manager=lifecycle_manager,
+        train_profile_fn=train_profile_fn,
+        eval_profile_fn=eval_profile_fn,
+        promote_checkpoint_fn=promote_checkpoint_fn,
+    )
+    checkpoint_id = train_record.result.get("checkpoint_id")
+    if not checkpoint_id:
+        raise ValueError("train-profile cycle result must include checkpoint_id")
+
+    eval_job = _enqueue_or_reuse_job(
+        queue,
+        job_type="eval-profile",
+        payload=EvalProfileJobPayload(
+            advisor_profile_id=advisor_profile_id,
+            candidate_checkpoint_id=checkpoint_id,
+            benchmark_manifests=benchmark_manifests,
+            promotion_threshold=promotion_threshold,
+        ).model_dump(),
+        resume_token=f"{cycle_key}:eval:{checkpoint_id}",
+    )
+    eval_record = run_operator_job(
+        queue,
+        eval_job.job_id,
+        settings=settings,
+        profile_registry=profile_registry,
+        lifecycle_manager=lifecycle_manager,
+        train_profile_fn=train_profile_fn,
+        eval_profile_fn=eval_profile_fn,
+        promote_checkpoint_fn=promote_checkpoint_fn,
+    )
+
+    promote_record = None
+    promoted = False
+    if eval_record.result.get("promote") is True:
+        promote_job = _enqueue_or_reuse_job(
+            queue,
+            job_type="promote-checkpoint",
+            payload=PromoteCheckpointJobPayload(
+                advisor_profile_id=advisor_profile_id,
+                candidate_checkpoint_id=checkpoint_id,
+                evaluation=eval_record.result,
+            ).model_dump(),
+            resume_token=f"{cycle_key}:promote:{checkpoint_id}",
+        )
+        promote_record = run_operator_job(
+            queue,
+            promote_job.job_id,
+            settings=settings,
+            profile_registry=profile_registry,
+            lifecycle_manager=lifecycle_manager,
+            train_profile_fn=train_profile_fn,
+            eval_profile_fn=eval_profile_fn,
+            promote_checkpoint_fn=promote_checkpoint_fn,
+        )
+        promoted = bool(promote_record.result.get("promoted"))
+
+    return ContinuousTrainingCycleResult(
+        train_job=train_record.model_dump(),
+        eval_job=eval_record.model_dump(),
+        promote_job=promote_record.model_dump() if promote_record is not None else None,
+        promoted=promoted,
+    ).model_dump()
+
+
 def _run_train_profile_job(
     *,
     job_id: str,
@@ -480,6 +583,19 @@ def _normalize_result(result: Any) -> dict:
 
 def _build_lifecycle_manager(settings: AdvisorSettings) -> CheckpointLifecycleManager:
     return CheckpointLifecycleManager(Path(settings.trace_db_path).expanduser().parent / "artifacts")
+
+
+def _enqueue_or_reuse_job(
+    queue: OperatorJobQueue,
+    *,
+    job_type: str,
+    payload: dict,
+    resume_token: str,
+) -> OperatorJobRecord:
+    for item in queue.list_jobs():
+        if item.job_type == job_type and item.resume_token == resume_token:
+            return item
+    return queue.enqueue_job(job_type=job_type, payload=payload, resume_token=resume_token)
 
 
 def _get_job(queue: OperatorJobQueue, job_id: str) -> OperatorJobRecord:
