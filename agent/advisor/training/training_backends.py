@@ -63,7 +63,7 @@ class GRPOTrainingSample(BaseModel):
     completion: str
     reward: float
     profile_id: str
-    provenance: dict[str, str | int | None] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class GRPOTrainingCandidate(BaseModel):
@@ -74,7 +74,7 @@ class GRPOTrainingCandidate(BaseModel):
     profile_id: str
     group_id: str
     candidate_index: int
-    provenance: dict[str, str | int | None] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class GRPOTrainingGroup(BaseModel):
@@ -225,25 +225,93 @@ class MLXLoRATrainer:
 def build_grpo_training_samples(request: TrainingBackendRunRequest) -> list[GRPOTrainingSample]:
     # Keep sample construction deterministic so reward provenance is replayable across runs.
     samples: list[GRPOTrainingSample] = []
+    seen_signatures: set[str] = set()
     for sample_index, result in enumerate(request.rollout_group.results):
+        trajectory_payload = _normalized_payload(result.trajectory) if result.trajectory else {}
+        trajectory_turns = list(trajectory_payload.get("turns") or [])
+        if trajectory_turns:
+            for turn_payload in sorted(
+                (_normalized_payload(turn) for turn in trajectory_turns),
+                key=lambda turn: int(turn.get("turn_index", 0)),
+            ):
+                sample = _trajectory_turn_training_sample(
+                    request,
+                    result,
+                    trajectory_payload=trajectory_payload,
+                    turn_payload=turn_payload,
+                    sample_index=len(samples),
+                )
+                signature = _sample_signature(sample)
+                if signature in seen_signatures:
+                    continue
+                seen_signatures.add(signature)
+                samples.append(sample)
+            continue
+
         packet_payload = _normalized_payload(result.packet)
         advice_payload = _normalized_payload(result.primary_advice)
-        samples.append(
-            GRPOTrainingSample(
-                prompt=json.dumps(packet_payload, sort_keys=True),
-                completion=json.dumps(advice_payload, sort_keys=True),
-                reward=float(_reward_total(result.reward_label)),
-                profile_id=request.advisor_profile_id,
-                provenance={
-                    "job_id": request.job_id,
-                    "group_id": request.rollout_group.group_id,
-                    "rollout_id": result.rollout_id,
-                    "advisor_profile_id": result.advisor_profile_id,
-                    "sample_index": sample_index,
-                },
-            )
+        sample = GRPOTrainingSample(
+            prompt=_stable_json_dumps(packet_payload),
+            completion=_stable_json_dumps(advice_payload),
+            reward=float(_reward_total(result.reward_label)),
+            profile_id=request.advisor_profile_id,
+            provenance={
+                "job_id": request.job_id,
+                "group_id": request.rollout_group.group_id,
+                "rollout_id": result.rollout_id,
+                "advisor_profile_id": result.advisor_profile_id,
+                "sample_index": sample_index,
+            },
         )
+        signature = _sample_signature(sample)
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        samples.append(sample)
     return samples
+
+
+def _trajectory_turn_training_sample(
+    request: TrainingBackendRunRequest,
+    result: Any,
+    *,
+    trajectory_payload: dict[str, Any],
+    turn_payload: dict[str, Any],
+    sample_index: int,
+) -> GRPOTrainingSample:
+    final_reward = _trajectory_final_reward(trajectory_payload, result.reward_label)
+    trajectory_id = trajectory_payload.get("trajectory_id") or result.rollout_id
+    profile_id = trajectory_payload.get("advisor_profile_id") or result.advisor_profile_id
+    turn_index = int(turn_payload.get("turn_index", sample_index))
+    state_t = _normalized_payload(turn_payload.get("state_packet") or {})
+    advice_t = _normalized_payload(turn_payload.get("advice") or {})
+    observation_t = _normalized_payload(turn_payload.get("observation") or {})
+    prompt_payload = {
+        "state_t": state_t,
+        "observation_t": observation_t,
+        "turn_index": turn_index,
+        "trajectory_id": trajectory_id,
+        "final_reward": final_reward,
+        "profile_id": profile_id,
+    }
+    completion_payload = {"advice_t": advice_t}
+    return GRPOTrainingSample(
+        prompt=_stable_json_dumps(prompt_payload),
+        completion=_stable_json_dumps(completion_payload),
+        reward=final_reward,
+        profile_id=request.advisor_profile_id,
+        provenance={
+            "job_id": request.job_id,
+            "group_id": request.rollout_group.group_id,
+            "rollout_id": result.rollout_id,
+            "advisor_profile_id": result.advisor_profile_id,
+            "sample_index": sample_index,
+            "trajectory_id": trajectory_id,
+            "turn_index": turn_index,
+            "final_reward": final_reward,
+            "profile_id": profile_id,
+        },
+    )
 
 
 def build_grpo_training_groups(request: TrainingBackendRunRequest) -> list[GRPOTrainingGroup]:
@@ -381,6 +449,52 @@ def _normalized_payload(payload: BaseModel | dict) -> dict:
     if isinstance(payload, BaseModel):
         return payload.model_dump()
     return dict(payload)
+
+
+def _stable_json_dumps(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _trajectory_final_reward(trajectory_payload: dict[str, Any], reward_label: BaseModel | dict) -> float:
+    # The rollout reward label is the canonical evaluator output. Persisted trajectory payloads can lag
+    # when replayed or repaired, so use trajectory.final_reward only as a compatibility fallback.
+    reward_payload = reward_label.model_dump() if isinstance(reward_label, BaseModel) else dict(reward_label)
+    if "total_reward" in reward_payload:
+        return float(reward_payload["total_reward"])
+
+    final_reward = trajectory_payload.get("final_reward")
+    if isinstance(final_reward, BaseModel):
+        final_reward = final_reward.model_dump()
+    if isinstance(final_reward, dict) and "total_reward" in final_reward:
+        return float(final_reward["total_reward"])
+    if isinstance(final_reward, int | float):
+        return float(final_reward)
+    return 0.0
+
+
+def _sample_signature(sample: GRPOTrainingSample) -> str:
+    prompt_payload = _strip_signature_noise(json.loads(sample.prompt))
+    completion_payload = _strip_signature_noise(json.loads(sample.completion))
+    return _stable_json_dumps(
+        {
+            "prompt": prompt_payload,
+            "completion": completion_payload,
+            "reward": sample.reward,
+            "profile_id": sample.profile_id,
+        }
+    )
+
+
+def _strip_signature_noise(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        return {
+            key: _strip_signature_noise(value)
+            for key, value in sorted(payload.items())
+            if key not in {"run_id", "session_id", "trajectory_id"}
+        }
+    if isinstance(payload, list):
+        return [_strip_signature_noise(item) for item in payload]
+    return payload
 
 
 def _reward_total(reward_label: BaseModel | dict) -> float:
