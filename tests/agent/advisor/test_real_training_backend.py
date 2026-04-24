@@ -88,6 +88,72 @@ def _training_request() -> TrainingBackendRunRequest:
     )
 
 
+def _multiturn_training_request() -> TrainingBackendRunRequest:
+    request = _training_request()
+    trajectory = {
+        "trajectory_id": "traj-1",
+        "run_id": "run-traj-1",
+        "advisor_profile_id": "coding-default",
+        "task_text": "repair flaky workflow",
+        "turns": [
+            {
+                "turn_index": 0,
+                "state_packet": {
+                    "run_id": "volatile-run-0",
+                    "task_text": "repair flaky workflow",
+                    "task_type": "bugfix",
+                    "context": {"metadata": {"session_id": "volatile-session-0"}},
+                },
+                "advice": {"recommended_plan": ["inspect failing workflow"], "confidence": 0.6},
+                "observation": {
+                    "turn_index": 0,
+                    "status": "partial",
+                    "summary": "workflow still fails",
+                    "executor_output": "pytest failed",
+                    "metrics": {"run_id": "volatile-step-0", "attempt": 1},
+                },
+            },
+            {
+                "turn_index": 1,
+                "state_packet": {
+                    "run_id": "volatile-run-1",
+                    "task_text": "repair flaky workflow",
+                    "task_type": "bugfix",
+                    "history": [{"kind": "turn-observation", "summary": "workflow still fails"}],
+                },
+                "advice": {"recommended_plan": ["patch retry cleanup"], "confidence": 0.8},
+                "observation": {
+                    "turn_index": 1,
+                    "status": "success",
+                    "summary": "workflow passes",
+                    "executor_output": "pytest passed",
+                    "metrics": {"run_id": "volatile-step-1", "attempt": 2},
+                },
+            },
+        ],
+        "final_reward": {"total_reward": 0.72},
+        "stop_reason": "success",
+        "budget": {"max_turns": 2},
+    }
+    result = request.rollout_group.results[0].model_copy(
+        update={
+            "rollout_id": "rollout-traj-1",
+            "packet": {"run_id": "legacy-run", "task_text": "legacy packet"},
+            "primary_advice": {"recommended_plan": ["legacy advice"]},
+            "reward_label": {"total_reward": 0.72},
+            "diagnostics": {"multi_turn": True, "turn_count": 2},
+            "trajectory": trajectory,
+        }
+    )
+    return request.model_copy(
+        update={
+            "rollout_group": request.rollout_group.model_copy(
+                update={"results": [result], "reward_values": [0.72], "summary": {"mean_reward": 0.72}}
+            )
+        }
+    )
+
+
 class RecordingTrainer:
     def __init__(self):
         self.calls = []
@@ -236,6 +302,76 @@ def test_build_grpo_training_samples_preserves_rewards_and_provenance():
     assert [sample.provenance["rollout_id"] for sample in samples] == ["rollout-1", "rollout-2"]
     assert all(sample.profile_id == "coding-default" for sample in samples)
     assert all(sample.provenance["job_id"] == "job-1" for sample in samples)
+
+
+
+def test_build_grpo_training_samples_emits_one_sample_per_trajectory_turn_with_provenance():
+    request = _multiturn_training_request()
+
+    samples = build_grpo_training_samples(request)
+
+    assert len(samples) == 2
+    assert [sample.reward for sample in samples] == [0.72, 0.72]
+    assert [sample.profile_id for sample in samples] == ["coding-default", "coding-default"]
+    assert [sample.provenance["trajectory_id"] for sample in samples] == ["traj-1", "traj-1"]
+    assert [sample.provenance["turn_index"] for sample in samples] == [0, 1]
+    assert [sample.provenance["final_reward"] for sample in samples] == [0.72, 0.72]
+    assert [sample.provenance["profile_id"] for sample in samples] == ["coding-default", "coding-default"]
+
+    first_prompt = json.loads(samples[0].prompt)
+    first_completion = json.loads(samples[0].completion)
+    assert first_prompt["state_t"]["task_text"] == "repair flaky workflow"
+    assert first_prompt["observation_t"]["summary"] == "workflow still fails"
+    assert first_prompt["trajectory_id"] == "traj-1"
+    assert first_prompt["turn_index"] == 0
+    assert first_prompt["final_reward"] == 0.72
+    assert first_prompt["profile_id"] == "coding-default"
+    assert first_completion["advice_t"]["recommended_plan"] == ["inspect failing workflow"]
+
+
+
+def test_build_grpo_training_samples_deduplicates_volatile_ids_but_keeps_distinct_observations():
+    request = _multiturn_training_request()
+    base_trajectory = request.rollout_group.results[0].trajectory
+    duplicate_trajectory = json.loads(json.dumps(base_trajectory))
+    duplicate_trajectory["trajectory_id"] = "traj-duplicate-volatile"
+    duplicate_trajectory["run_id"] = "different-volatile-run"
+    duplicate_trajectory["turns"][0]["state_packet"]["run_id"] = "different-volatile-state-run"
+    duplicate_trajectory["turns"][0]["state_packet"]["context"]["metadata"]["session_id"] = "different-session"
+    duplicate_trajectory["turns"][0]["observation"]["metrics"]["run_id"] = "different-step-run"
+    duplicate_trajectory["turns"] = [duplicate_trajectory["turns"][0]]
+
+    distinct_trajectory = json.loads(json.dumps(base_trajectory))
+    distinct_trajectory["trajectory_id"] = "traj-distinct-observation"
+    distinct_trajectory["turns"] = [distinct_trajectory["turns"][0]]
+    distinct_trajectory["turns"][0]["observation"]["summary"] = "workflow fails with timeout"
+
+    duplicate_result = request.rollout_group.results[0].model_copy(
+        update={"rollout_id": "rollout-volatile-duplicate", "trajectory": duplicate_trajectory}
+    )
+    distinct_result = request.rollout_group.results[0].model_copy(
+        update={"rollout_id": "rollout-distinct-observation", "trajectory": distinct_trajectory}
+    )
+    mutated_request = request.model_copy(
+        update={
+            "rollout_group": request.rollout_group.model_copy(
+                update={
+                    "results": [request.rollout_group.results[0], duplicate_result, distinct_result],
+                    "reward_values": [0.72, 0.72, 0.72],
+                }
+            )
+        }
+    )
+
+    samples = build_grpo_training_samples(mutated_request)
+    prompt_payloads = [json.loads(sample.prompt) for sample in samples]
+
+    assert len(samples) == 3
+    assert [payload["observation_t"]["summary"] for payload in prompt_payloads] == [
+        "workflow still fails",
+        "workflow passes",
+        "workflow fails with timeout",
+    ]
 
 
 
