@@ -330,6 +330,28 @@ def test_build_grpo_training_samples_emits_one_sample_per_trajectory_turn_with_p
 
 
 
+def test_build_grpo_training_samples_uses_reward_label_when_trajectory_reward_is_stale():
+    request = _multiturn_training_request()
+    stale_trajectory = json.loads(json.dumps(request.rollout_group.results[0].trajectory))
+    stale_trajectory["final_reward"] = {"total_reward": -0.25}
+    stale_result = request.rollout_group.results[0].model_copy(update={"trajectory": stale_trajectory})
+    mutated_request = request.model_copy(
+        update={
+            "rollout_group": request.rollout_group.model_copy(
+                update={"results": [stale_result], "reward_values": [0.72], "summary": {"mean_reward": 0.72}}
+            )
+        }
+    )
+
+    samples = build_grpo_training_samples(mutated_request)
+    prompt_payloads = [json.loads(sample.prompt) for sample in samples]
+
+    assert [sample.reward for sample in samples] == [0.72, 0.72]
+    assert [payload["final_reward"] for payload in prompt_payloads] == [0.72, 0.72]
+    assert [sample.provenance["final_reward"] for sample in samples] == [0.72, 0.72]
+
+
+
 def test_build_grpo_training_samples_deduplicates_volatile_ids_but_keeps_distinct_observations():
     request = _multiturn_training_request()
     base_trajectory = request.rollout_group.results[0].trajectory

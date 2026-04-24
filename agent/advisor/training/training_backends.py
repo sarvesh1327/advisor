@@ -456,6 +456,12 @@ def _stable_json_dumps(payload: dict[str, Any]) -> str:
 
 
 def _trajectory_final_reward(trajectory_payload: dict[str, Any], reward_label: BaseModel | dict) -> float:
+    # The rollout reward label is the canonical evaluator output. Persisted trajectory payloads can lag
+    # when replayed or repaired, so use trajectory.final_reward only as a compatibility fallback.
+    reward_payload = reward_label.model_dump() if isinstance(reward_label, BaseModel) else dict(reward_label)
+    if "total_reward" in reward_payload:
+        return float(reward_payload["total_reward"])
+
     final_reward = trajectory_payload.get("final_reward")
     if isinstance(final_reward, BaseModel):
         final_reward = final_reward.model_dump()
@@ -463,7 +469,7 @@ def _trajectory_final_reward(trajectory_payload: dict[str, Any], reward_label: B
         return float(final_reward["total_reward"])
     if isinstance(final_reward, int | float):
         return float(final_reward)
-    return float(_reward_total(reward_label))
+    return 0.0
 
 
 def _sample_signature(sample: GRPOTrainingSample) -> str:
