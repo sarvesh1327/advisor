@@ -204,6 +204,77 @@ def test_orchestrator_records_lineage_manifest_and_reward_for_advisor_arm(tmp_pa
     assert persisted["lineage"]["reward_label"]["run_id"] == result.run_id
 
 
+def test_orchestrator_persists_profile_local_trajectory_for_live_run(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    runtime = StubRuntime(
+        [
+            AdviceBlock(
+                task_type="bugfix",
+                recommended_plan=["inspect gateway.py", "run targeted tests"],
+                confidence=0.91,
+            )
+        ]
+    )
+    executor = FrontierChatExecutor(
+        name="frontier-chat",
+        execute_fn=lambda request: ExecutorRunResult(
+            status="success",
+            summary="Executor completed the repair.",
+            output="patched gateway.py and ran pytest -q",
+            files_touched=["agent/advisor/gateway.py"],
+            tests_run=["pytest tests/agent/advisor/test_orchestration.py -q"],
+            metadata={"steps": 3, "model": "gpt-4.1"},
+            retries=2,
+        ),
+    )
+    orchestrator = AdvisorOrchestrator(
+        runtime=runtime,
+        trace_store=store,
+        executor=executor,
+        verifiers=[
+            BuildTestVerifier(
+                name="build-and-test",
+                verify_fn=lambda request, result: VerifierResult(
+                    status="pass",
+                    summary="tests green",
+                    metadata={"coverage": "targeted"},
+                ),
+            )
+        ],
+        router=DeterministicABRouter(advisor_fraction=1.0),
+    )
+
+    result = orchestrator.run(_packet("run-trajectory"), advisor_profile_id="coding-default")
+
+    trajectories = store.list_trajectories(run_id=result.run_id)
+    assert len(trajectories) == 1
+    trajectory = trajectories[0]
+    assert trajectory["trajectory_id"] == f"trajectory:{result.run_id}"
+    assert trajectory["run_id"] == result.run_id
+    assert trajectory["advisor_profile_id"] == "coding-default"
+    assert trajectory["task_text"] == "repair the execution loop"
+    assert trajectory["stop_reason"] == "success"
+    assert trajectory["budget"] == {"max_turns": 1, "source": "orchestrator.run"}
+    assert trajectory["final_outcome"]["status"] == "success"
+    assert trajectory["final_reward"]["run_id"] == result.run_id
+    assert trajectory["final_reward"]["advisor_profile_id"] == "coding-default"
+
+    assert len(trajectory["turns"]) == 1
+    turn = trajectory["turns"][0]
+    assert turn["turn_index"] == 0
+    assert turn["state_packet"]["run_id"] == result.run_id
+    assert turn["advice"]["recommended_plan"] == ["inspect gateway.py", "run targeted tests"]
+    assert turn["reward_hint"] == result.lineage.reward_label.total_reward
+    assert turn["observation"]["status"] == "success"
+    assert turn["observation"]["summary"] == "Executor completed the repair."
+    assert turn["observation"]["executor_output"] == "patched gateway.py and ran pytest -q"
+    assert turn["observation"]["files_touched"] == ["agent/advisor/gateway.py"]
+    assert turn["observation"]["tests_run"] == ["pytest tests/agent/advisor/test_orchestration.py -q"]
+    assert turn["observation"]["verifier_hints"] == ["build-and-test: pass — tests green"]
+    assert turn["observation"]["metrics"]["steps"] == 3
+    assert turn["observation"]["metrics"]["retries"] == 2
+
+
 def test_orchestrator_uses_profile_reward_registry_not_reward_weight_presets(tmp_path):
     def build_orchestrator(db_name: str, reward_preset: str):
         return AdvisorOrchestrator(
@@ -268,6 +339,7 @@ def test_orchestrator_routes_baseline_runs_without_injecting_advice(tmp_path):
 
     assert result.manifest.routing_decision.arm == "baseline"
     assert captured == {"rendered_advice": None, "arm": "baseline"}
+    assert store.list_trajectories(run_id=result.run_id) == []
 
 
 def test_orchestrator_supports_optional_second_pass_review(tmp_path):
