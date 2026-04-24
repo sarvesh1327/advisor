@@ -1,14 +1,17 @@
-from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
+from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary, TurnObservation
 from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.execution.orchestration import (
     AdvisorOrchestrator,
     BuildTestVerifier,
     DeterministicABRouter,
     ExecutorRunResult,
+    ExecutorStepRequest,
+    ExecutorStepResult,
     FrontierChatExecutor,
     HumanReviewVerifier,
     RubricVerifier,
     VerifierResult,
+    run_executor_step,
 )
 from agent.advisor.storage.trace_store import AdvisorTraceStore
 
@@ -37,6 +40,80 @@ def _packet(run_id: str = "run-phase10"):
         acceptance_criteria=["runner persists a replayable lineage"],
         token_budget=900,
     )
+
+
+def test_run_executor_step_calls_step_capable_executor_once():
+    class StepCapableExecutor:
+        def __init__(self):
+            self.calls = []
+
+        def execute_step(self, request):
+            self.calls.append(request)
+            return ExecutorStepResult(
+                status="partial",
+                summary="advanced one step",
+                output="draft patch",
+                files_touched=["agent/advisor/gateway.py"],
+                tests_run=["pytest -q"],
+                error_messages=["needs verifier pass"],
+                metrics={"tokens": 11},
+                done=False,
+            )
+
+    executor = StepCapableExecutor()
+    request = ExecutorStepRequest(
+        trajectory_id="traj-step",
+        turn_index=1,
+        packet=_packet("run-step"),
+        advice=AdviceBlock(task_type="bugfix", recommended_plan=["patch one step"]),
+        previous_observations=[TurnObservation(turn_index=0, status="partial", summary="first turn")],
+        budget={"max_turns": 3},
+    )
+
+    result = run_executor_step(executor, request)
+
+    assert len(executor.calls) == 1
+    assert executor.calls[0].trajectory_id == "traj-step"
+    assert executor.calls[0].previous_observations[0].summary == "first turn"
+    assert result.done is False
+    assert result.error_messages == ["needs verifier pass"]
+
+
+def test_run_executor_step_adapts_legacy_executor_to_terminal_step():
+    captured = {}
+
+    def execute(request):
+        captured["run_id"] = request.run_id
+        captured["rendered_advice"] = request.rendered_advice
+        captured["routing_arm"] = request.routing_decision.arm
+        return ExecutorRunResult(
+            status="success",
+            summary="legacy executor completed",
+            output="patched gateway.py",
+            files_touched=["agent/advisor/gateway.py"],
+            tests_run=["pytest -q"],
+            metadata={"steps": 1},
+            retries=1,
+        )
+
+    executor = FrontierChatExecutor(name="legacy-frontier", execute_fn=execute)
+    request = ExecutorStepRequest(
+        trajectory_id="traj-legacy",
+        turn_index=0,
+        packet=_packet("run-legacy-step"),
+        advice=AdviceBlock(task_type="bugfix", recommended_plan=["run legacy executor"]),
+        rendered_advice="advisor hint",
+        previous_observations=[],
+        budget={"max_turns": 1},
+    )
+
+    result = run_executor_step(executor, request)
+
+    assert captured == {"run_id": "run-legacy-step", "rendered_advice": "advisor hint", "routing_arm": "advisor"}
+    assert result.status == "success"
+    assert result.done is True
+    assert result.metrics["steps"] == 1
+    assert result.metrics["retries"] == 1
 
 
 def test_orchestrator_records_lineage_manifest_and_reward_for_advisor_arm(tmp_path):

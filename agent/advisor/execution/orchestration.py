@@ -16,6 +16,7 @@ from agent.advisor.core.schemas import (
     AdvisorInputPacket,
     AdvisorOutcome,
     RewardLabel,
+    TurnObservation,
 )
 from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.core.validator import AdviceValidator
@@ -61,6 +62,32 @@ class ExecutorRunResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     retries: int = 0
+
+
+class ExecutorStepRequest(BaseModel):
+    # Step requests are the per-turn input consumed by multi-turn rollout executors.
+    trajectory_id: str
+    turn_index: int
+    packet: AdvisorInputPacket
+    advice: AdviceBlock
+    previous_observations: list[TurnObservation] = Field(default_factory=list)
+    budget: dict[str, Any] = Field(default_factory=dict)
+    rendered_advice: str | None = None
+    routing_decision: RoutingDecision = Field(
+        default_factory=lambda: RoutingDecision(arm="advisor", advisor_fraction=1.0, routing_key="step", bucket=0.0)
+    )
+
+
+class ExecutorStepResult(BaseModel):
+    # Step results deliberately mirror executor output plus a terminal marker.
+    status: Literal["success", "failure", "partial"]
+    summary: str | None = None
+    output: str | None = None
+    files_touched: list[str] = Field(default_factory=list)
+    tests_run: list[str] = Field(default_factory=list)
+    error_messages: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    done: bool = False
 
 
 class VerifierResult(BaseModel):
@@ -156,6 +183,42 @@ class CodingAgentExecutor(CallableExecutor):
 class DomainWorkerExecutor(CallableExecutor):
     def __init__(self, *, name: str, execute_fn: Callable[[ExecutorRequest], ExecutorRunResult | dict[str, Any]], metadata: dict[str, Any] | None = None):
         super().__init__(kind="domain_worker", name=name, execute_fn=execute_fn, metadata=metadata)
+
+
+def run_executor_step(executor: Any, request: ExecutorStepRequest) -> ExecutorStepResult:
+    # Prefer true step executors; legacy executors are treated as one terminal turn.
+    execute_step = getattr(executor, "execute_step", None)
+    if callable(execute_step):
+        result = execute_step(request)
+        return result if isinstance(result, ExecutorStepResult) else ExecutorStepResult(**dict(result))
+    legacy_result = executor.execute(
+        ExecutorRequest(
+            run_id=request.packet.run_id,
+            packet=request.packet,
+            advice=request.advice,
+            rendered_advice=request.rendered_advice,
+            routing_decision=request.routing_decision,
+        )
+    )
+    if not isinstance(legacy_result, ExecutorRunResult):
+        legacy_result = ExecutorRunResult(**dict(legacy_result))
+    return _executor_run_result_to_step_result(legacy_result)
+
+
+def _executor_run_result_to_step_result(result: ExecutorRunResult) -> ExecutorStepResult:
+    # Preserve executor metadata as metrics so later trajectory rewards can inspect it.
+    metrics = dict(result.metadata)
+    metrics.setdefault("retries", result.retries)
+    return ExecutorStepResult(
+        status=result.status,
+        summary=result.summary,
+        output=result.output,
+        files_touched=result.files_touched,
+        tests_run=result.tests_run,
+        error_messages=[result.summary] if result.status == "failure" and result.summary else [],
+        metrics=metrics,
+        done=True,
+    )
 
 
 class CallableVerifier:
