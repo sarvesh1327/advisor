@@ -96,7 +96,7 @@ def test_build_benchmark_run_manifest_captures_canonical_replay_fields(tmp_path)
         router=DeterministicABRouter(advisor_fraction=1.0),
     )
     packet = _packet("run-manifest")
-    result = orchestrator.run(packet)
+    result = orchestrator.run(packet, advisor_profile_id="coding-default")
     fixture = _fixture("run-manifest", "coding-main")
 
     manifest = build_benchmark_run_manifest(

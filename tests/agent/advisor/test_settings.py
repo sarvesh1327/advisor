@@ -23,6 +23,17 @@ def test_get_default_profiles_path_points_to_repo_config():
 
 
 
+def test_settings_default_profile_is_generalist():
+    settings = AdvisorSettings()
+    from_env = AdvisorSettings.from_env()
+
+    assert settings.enabled is True
+    assert settings.advisor_profile_id == "generalist"
+    assert from_env.enabled is True
+    assert from_env.advisor_profile_id == "generalist"
+
+
+
 def test_settings_from_env_uses_advisor_prefix(monkeypatch, tmp_path):
     advisor_home = tmp_path / "product-home"
     monkeypatch.setenv("ADVISOR_HOME", str(advisor_home))

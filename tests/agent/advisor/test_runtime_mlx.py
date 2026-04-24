@@ -500,6 +500,43 @@ def test_runtime_timeout_does_not_wait_for_executor_shutdown(monkeypatch):
 
 
 
+def test_runtime_retries_generation_on_main_thread_when_mlx_stream_is_thread_local(monkeypatch):
+    calls = {"generated": 0, "submitted": False}
+
+    class FakeFuture:
+        def result(self, timeout):
+            calls["timeout"] = timeout
+            raise RuntimeError("There is no Stream(gpu, 0) in current thread.")
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            calls["max_workers"] = max_workers
+
+        def submit(self, fn):
+            calls["submitted"] = True
+            return FakeFuture()
+
+        def shutdown(self, wait=True, cancel_futures=False):
+            calls["shutdown"] = (wait, cancel_futures)
+
+    def fake_generate(*_args, **_kwargs):
+        calls["generated"] += 1
+        return "main-thread-json"
+
+    monkeypatch.setattr(runtime_mlx, "ThreadPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_generate", fake_generate)
+    monkeypatch.setattr(runtime_mlx, "mlx_make_sampler", lambda temp: {"temp": temp})
+
+    runtime = MLXAdvisorRuntime(AdvisorSettings(inference_timeout_seconds=3))
+
+    assert runtime._generate_response(SimpleNamespace(), StubTokenizer(), "prompt") == "main-thread-json"
+    assert calls["submitted"] is True
+    assert calls["timeout"] == 3
+    assert calls["shutdown"] == (True, False)
+    assert calls["generated"] == 1
+
+
+
 def test_runtime_warmup_marks_runtime_ready(monkeypatch):
     monkeypatch.setattr(runtime_mlx, "mlx_lm_load", lambda _model_name: (SimpleNamespace(), StubTokenizer()))
 

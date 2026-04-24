@@ -7,6 +7,7 @@ from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorO
 from agent.advisor.domain_rewards import (
     compute_coding_exact_answer_reward,
     compute_coding_swe_efficiency_reward,
+    compute_generalist_multi_turn_reward,
     compute_research_writing_match_reward,
     compute_ui_edit_from_screenshot_reward,
     compute_ui_from_text_layout_reward,
@@ -146,6 +147,13 @@ class RewardRegistry:
                 constraint_compliance=float(verifier_metadata.get("constraint_compliance") or 0.0),
                 coverage_score=float(verifier_metadata.get("coverage_score") or 0.0),
             )
+        if spec.formula_name == "generalist_multi_turn_conversation":
+            return compute_generalist_multi_turn_reward(
+                helpfulness_score=float(verifier_metadata.get("helpfulness_score") or 0.0),
+                coherence_score=float(verifier_metadata.get("coherence_score") or 0.0),
+                constraint_compliance=float(verifier_metadata.get("constraint_compliance") or 0.0),
+                grounding_score=float(verifier_metadata.get("grounding_score") or 0.0),
+            )
         raise ValueError(f"unsupported reward formula: {spec.formula_name}")
 
 
@@ -188,6 +196,7 @@ def _default_reward_spec_for_profile(profile_id: str) -> str:
         "researcher": "research_writing_match",
         "text-ui": "ui_from_text_layout",
         "image-ui": "ui_from_text_layout",
+        "generalist": "generalist_multi_turn_conversation",
     }.get(profile_id, profile_id)
 
 

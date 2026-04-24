@@ -97,6 +97,7 @@ class AdvisorTaskRequest(BaseModel):
     task_type_hint: str | None = None
     system_prompt: str | None = None
     advisor_profile_id: str | None = None
+    caller_id: str | None = None
     session_id: str | None = None
     task_id: str | None = None
     changed_files: list[str] = Field(default_factory=list)

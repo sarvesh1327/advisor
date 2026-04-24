@@ -132,10 +132,15 @@ def test_profile_registry_loads_profile_training_config_from_toml(tmp_path):
 def test_live_profile_registry_covers_full_phase2_matrix():
     registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
 
-    assert set(registry.profiles) == {"coding-default", "researcher", "text-ui", "image-ui"}
+    assert registry.default_profile_id == "generalist"
+    assert set(registry.profiles) == {"coding-default", "researcher", "text-ui", "image-ui", "generalist"}
     assert registry.get("coding-default").domain == "coding"
     assert registry.get("researcher").domain == "research-writing"
     assert registry.get("text-ui").domain == "text-ui"
     assert registry.get("image-ui").domain == "image-ui"
+    assert registry.get("generalist").domain == "conversation"
     assert registry.get("text-ui").training is not None
     assert registry.get("image-ui").training is not None
+    assert registry.get("generalist").reward_spec_id == "generalist_multi_turn_conversation"
+    assert registry.get("generalist").training is not None
+    assert registry.get("generalist").training.checkpoint_root == "checkpoints/generalist"

@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-advisor = "agent.advisor.cli:main"
+advisor = "agent.advisor.product.cli:main"
 
 [project.optional-dependencies]
 advisor = [

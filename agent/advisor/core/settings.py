@@ -29,7 +29,7 @@ def get_default_profiles_path() -> Path:
 
 class AdvisorSettings(BaseModel):
     # Defaults describe the standalone local runtime; callers can override through TOML or env.
-    enabled: bool = False
+    enabled: bool = True
     trace_db_path: str = str(get_default_advisor_home() / "advisor.db")
     model_name: str = "mlx-community/Qwen2.5-3B-Instruct-4bit"
     model_version: str = "advisor-qwen25-3b-v1"
@@ -53,7 +53,7 @@ class AdvisorSettings(BaseModel):
     enable_fallback_runtime: bool = True
     reward_preset: str = "balanced"
     reward_weights_config: dict[str, float] = Field(default_factory=dict, alias="reward_weights")
-    advisor_profile_id: str = "coding-default"
+    advisor_profile_id: str = "generalist"
     advisor_profiles_path: str = str(get_default_profiles_path())
     retention_days: int = 30
     event_log_path: str = str(get_default_advisor_home() / "events.jsonl")
@@ -145,7 +145,7 @@ class AdvisorSettings(BaseModel):
             if os.getenv(env_name) is not None
         }
         return cls(
-            enabled=os.getenv("ADVISOR_ENABLED", "0").lower() in {"1", "true", "yes", "on"},
+            enabled=os.getenv("ADVISOR_ENABLED", "1").lower() in {"1", "true", "yes", "on"},
             trace_db_path=os.getenv("ADVISOR_TRACE_DB", str(default_db)),
             model_name=os.getenv("ADVISOR_MODEL", "mlx-community/Qwen2.5-3B-Instruct-4bit"),
             model_version=os.getenv("ADVISOR_MODEL_VERSION", "advisor-qwen25-3b-v1"),
@@ -171,7 +171,7 @@ class AdvisorSettings(BaseModel):
             in {"1", "true", "yes", "on"},
             reward_preset=os.getenv("ADVISOR_REWARD_PRESET", "balanced"),
             reward_weights=reward_weights,
-            advisor_profile_id=os.getenv("ADVISOR_PROFILE_ID", "coding-default"),
+            advisor_profile_id=os.getenv("ADVISOR_PROFILE_ID", "generalist"),
             advisor_profiles_path=os.getenv("ADVISOR_PROFILES_PATH", str(get_default_profiles_path())),
             retention_days=int(os.getenv("ADVISOR_RETENTION_DAYS", "30")),
             event_log_path=os.getenv("ADVISOR_EVENT_LOG_PATH", str(advisor_home / "events.jsonl")),

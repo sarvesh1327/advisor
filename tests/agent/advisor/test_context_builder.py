@@ -153,6 +153,31 @@ def test_context_builder_selects_text_ui_adapter_for_text_ui_profile_domain(tmp_
 
 
 
+def test_context_builder_selects_conversation_adapter_for_generalist_profile_domain(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "notes").mkdir(parents=True)
+    (repo / "notes" / "customer-call.md").write_text("user asked about pricing\n")
+    (repo / "transcripts").mkdir(parents=True)
+    (repo / "transcripts" / "chat-001.md").write_text("user: hi\nassistant: hello\n")
+
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    builder = ContextBuilder(trace_store=store)
+    packet = builder.build(
+        task_text="continue the conversation and answer the user's follow-up clearly",
+        repo_path=str(repo),
+        tool_limits={},
+        acceptance_criteria=["answer is coherent across turns"],
+        profile_domain="conversation",
+        changed_files=["transcripts/chat-001.md"],
+    )
+
+    assert packet.task.domain == "conversation"
+    assert packet.context.summary == "conversation task context"
+    assert packet.domain_capabilities[0].domain == "conversation"
+    assert packet.artifacts[0].kind in {"transcript", "note", "document"}
+
+
+
 def test_context_builder_packs_large_context_to_budget(tmp_path):
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
