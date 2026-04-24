@@ -15,6 +15,8 @@ from agent.advisor.core.schemas import (
     AdvisorHistoryEntry,
     AdvisorInputPacket,
     AdvisorOutcome,
+    AdvisorTrajectory,
+    AdvisorTrajectoryTurn,
     RewardLabel,
     TurnObservation,
 )
@@ -415,8 +417,69 @@ class AdvisorOrchestrator:
             reward_label=reward_label,
         )
         self.trace_store.record_lineage(packet.run_id, manifest, lineage)
+        self.trace_store.record_trajectory(
+            self._build_live_run_trajectory(
+                packet,
+                primary_advice,
+                executor_result,
+                verifier_results,
+                outcome,
+                reward_label,
+                advisor_profile_id=resolved_profile.profile_id,
+            )
+        )
         self.event_logger.log("run.completed", run_id=packet.run_id, stage="lineage", payload={"status": outcome.status})
         return LiveRunResult(run_id=packet.run_id, manifest=manifest, lineage=lineage)
+
+    def _build_live_run_trajectory(
+        self,
+        packet: AdvisorInputPacket,
+        advice: AdviceBlock,
+        executor_result: ExecutorRunResult,
+        verifier_results: list[VerifierRunRecord],
+        outcome: AdvisorOutcome,
+        reward_label: RewardLabel,
+        *,
+        advisor_profile_id: str,
+    ) -> AdvisorTrajectory:
+        # Live orchestrator runs are one-step trajectories so training export can consume dogfood evidence too.
+        metrics = dict(executor_result.metadata)
+        metrics["retries"] = executor_result.retries
+        observation = TurnObservation(
+            turn_index=0,
+            status=executor_result.status,
+            executor_output=executor_result.output,
+            summary=executor_result.summary,
+            files_touched=executor_result.files_touched,
+            tests_run=executor_result.tests_run,
+            verifier_hints=[self._format_verifier_hint(record) for record in verifier_results],
+            error_messages=[item for record in verifier_results for item in record.result.constraint_violations if item],
+            metrics=metrics,
+        )
+        return AdvisorTrajectory(
+            trajectory_id=f"trajectory:{packet.run_id}",
+            run_id=packet.run_id,
+            advisor_profile_id=advisor_profile_id,
+            task_text=packet.task_text,
+            turns=[
+                AdvisorTrajectoryTurn(
+                    turn_index=0,
+                    state_packet=packet,
+                    advice=advice,
+                    observation=observation,
+                    reward_hint=reward_label.total_reward,
+                )
+            ],
+            final_outcome=outcome,
+            final_reward=reward_label,
+            stop_reason=outcome.status,
+            budget={"max_turns": 1, "source": "orchestrator.run"},
+        )
+
+    @staticmethod
+    def _format_verifier_hint(record: VerifierRunRecord) -> str:
+        summary = f" — {record.result.summary}" if record.result.summary else ""
+        return f"{record.descriptor.name}: {record.result.status}{summary}"
 
     def _generate_advice(
         self,
