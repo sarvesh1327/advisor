@@ -1,5 +1,11 @@
 from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, CandidateFile, RepoSummary
-from agent.advisor.execution.orchestration import BuildTestVerifier, ExecutorRunResult, FrontierChatExecutor, VerifierResult
+from agent.advisor.execution.orchestration import (
+    BuildTestVerifier,
+    ExecutorRunResult,
+    ExecutorStepResult,
+    FrontierChatExecutor,
+    VerifierResult,
+)
 from agent.advisor.rewards.reward_registry import RewardRegistry
 from agent.advisor.training.training_rollouts import (
     RolloutTurnRecord,
@@ -17,6 +23,25 @@ class StubRuntime:
     def generate_advice(self, packet, system_prompt=None):
         self.calls.append({"packet": packet, "system_prompt": system_prompt})
         return AdviceBlock(task_type=packet.task_type, recommended_plan=["inspect main.py"], confidence=0.9)
+
+
+class StepRuntime:
+    def __init__(self):
+        self.calls = []
+
+    def generate_advice(self, packet, system_prompt=None, advisor_profile_id=None):
+        self.calls.append({"packet": packet, "system_prompt": system_prompt, "advisor_profile_id": advisor_profile_id})
+        return AdviceBlock(task_type=packet.task_type, recommended_plan=[f"turn {len(self.calls)} plan"], confidence=0.9)
+
+
+class SequencedStepExecutor:
+    def __init__(self, results):
+        self.results = list(results)
+        self.requests = []
+
+    def execute_step(self, request):
+        self.requests.append(request)
+        return self.results.pop(0)
 
 
 def _packet(run_id: str, task_type: str = "bugfix"):
@@ -75,6 +100,160 @@ def test_execute_training_rollout_produces_profile_local_single_turn_result():
     assert result.reward_label.reward_profile_id == "coding_swe_efficiency"
     assert result.reward_label.total_reward == 0.9375
     assert result.diagnostics["verifier_count"] == 1
+
+
+def test_execute_training_rollout_calls_runtime_once_per_turn_until_success():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [
+            ExecutorStepResult(status="partial", summary="draft patch", files_touched=["main.py"], done=False),
+            ExecutorStepResult(status="success", summary="tests green", files_touched=["main.py"], tests_run=["pytest -q"], done=True),
+        ]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-multiturn-success",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-multiturn-success"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=3,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert len(runtime.calls) == 2
+    assert [item.turn_index for item in executor.requests] == [0, 1]
+    assert result.executor_result.status == "success"
+    assert result.diagnostics["stop_reason"] == "success"
+
+
+def test_execute_training_rollout_derives_retries_from_multi_turn_count_when_metrics_missing():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [
+            ExecutorStepResult(status="partial", summary="draft patch", done=False),
+            ExecutorStepResult(status="success", summary="tests green", done=True),
+        ]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-derived-retries",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-derived-retries"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=3,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert result.executor_result.retries == 1
+    assert result.executor_result.metadata["steps"] == 2
+    assert result.reward_label.reward_diagnostics["steps"] == 2
+
+
+def test_execute_training_rollout_threads_previous_observations_into_next_packet():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [
+            ExecutorStepResult(status="partial", summary="first observation", error_messages=["lint failed"], done=False),
+            ExecutorStepResult(status="success", summary="second observation", done=True),
+        ]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-observations",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-observations"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=2,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    second_packet = runtime.calls[1]["packet"]
+    assert second_packet.history[-1].kind == "turn-observation"
+    assert second_packet.history[-1].summary == "first observation"
+    assert executor.requests[1].previous_observations[0].error_messages == ["lint failed"]
+    assert result.diagnostics["turn_count"] == 2
+
+
+def test_execute_training_rollout_returns_trajectory_with_final_reward():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [ExecutorStepResult(status="success", summary="done", files_touched=["main.py"], tests_run=["pytest -q"], done=True)]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-trajectory",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-trajectory"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=2,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert result.trajectory["trajectory_id"] == "rollout-trajectory"
+    assert result.trajectory["turns"][0]["state_packet"]["run_id"] == "run-trajectory"
+    assert result.trajectory["turns"][0]["advice"]["recommended_plan"] == ["turn 1 plan"]
+    assert result.trajectory["turns"][0]["observation"]["status"] == "success"
+    assert result.trajectory["final_reward"]["total_reward"] == result.reward_label.total_reward
+
+
+def test_execute_training_rollout_respects_max_turns():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [
+            ExecutorStepResult(status="partial", summary="still drafting", done=False),
+            ExecutorStepResult(status="partial", summary="still blocked", done=False),
+            ExecutorStepResult(status="success", summary="should not run", done=True),
+        ]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-max-turns",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-max-turns"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=2,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert len(runtime.calls) == 2
+    assert result.executor_result.status == "partial"
+    assert result.diagnostics["stop_reason"] == "max_turns"
+    assert len(result.trajectory["turns"]) == 2
 
 
 def test_execute_training_rollout_preserves_multi_turn_transcript():
