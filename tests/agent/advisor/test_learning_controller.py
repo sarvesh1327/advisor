@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import textwrap
 from pathlib import Path
@@ -78,6 +79,17 @@ def _delete_trajectories(settings: AdvisorSettings) -> None:
 def _clear_trajectory_rewards(settings: AdvisorSettings) -> None:
     with sqlite3.connect(settings.trace_db_path) as conn:
         conn.execute("UPDATE advisor_trajectories SET final_reward_json = NULL")
+
+
+
+def _overwrite_run_reward(settings: AdvisorSettings, run_id: str, total_reward: float) -> None:
+    with sqlite3.connect(settings.trace_db_path) as conn:
+        row = conn.execute("SELECT reward_json FROM reward_labels WHERE run_id = ?", (run_id,)).fetchone()
+        assert row is not None
+        payload = json.loads(row[0])
+        payload["total_reward"] = total_reward
+        payload["quality_score"] = total_reward
+        conn.execute("UPDATE reward_labels SET reward_json = ? WHERE run_id = ?", (json.dumps(payload), run_id))
 
 
 
@@ -281,6 +293,37 @@ def test_learning_readiness_blocks_trajectories_without_final_reward(tmp_path):
     assert report.fresh_run_count == 4
     assert report.fresh_trajectory_count == 0
     assert "insufficient_fresh_trajectories" in report.blocking_reasons
+
+
+
+def test_collect_fresh_rollout_groups_uses_canonical_run_reward_over_stale_trajectory_reward(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-canonical-reward")
+    _overwrite_run_reward(settings, "run-canonical-reward-1", 0.99)
+    registry = AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path)
+    state = AutonomousLearningState()
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+    collection = collect_fresh_rollout_groups(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+
+    assert 0.99 in report.reward_values
+    assert collection is not None
+    corrected = next(
+        result
+        for result in collection.rollout_group.results
+        if result.diagnostics["source_run_id"] == "run-canonical-reward-1"
+    )
+    assert corrected.reward_label.total_reward == 0.99
+    assert 0.99 in collection.rollout_group.reward_values
 
 
 

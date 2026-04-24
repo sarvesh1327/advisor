@@ -226,6 +226,9 @@ def _fresh_training_records(
         row = rows.get(run_id)
         if row is None:
             continue
+        canonical_reward = row.get("reward_label") or {}
+        if canonical_reward.get("total_reward") is None:
+            continue
         lineage = store.get_lineage(run_id)
         if lineage is None:
             continue
@@ -233,11 +236,11 @@ def _fresh_training_records(
             run_id=run_id,
             trajectory_id=trajectory_id,
             advisor_profile_id=advisor_profile_id,
-            reward_value=float(final_reward.get("total_reward") or 0.0),
+            reward_value=float(canonical_reward.get("total_reward") or 0.0),
             packet=trajectory["turns"][0].get("state_packet") if trajectory.get("turns") else row.get("input") or {},
             advice=trajectory["turns"][0].get("advice") if trajectory.get("turns") else row.get("advice") or {},
             outcome=final_outcome,
-            reward_label=final_reward,
+            reward_label=canonical_reward,
             lineage=lineage,
             trajectory=trajectory,
         )
