@@ -18,7 +18,7 @@ from agent.advisor.execution.orchestration import (
     RunLineage,
     RunManifest,
 )
-from agent.advisor.product.dashboard import build_advisor_activity_snapshot, render_advisor_activity_dashboard, simplify_run_title
+from agent.advisor.product.dashboard import build_advisor_activity_snapshot, build_advisor_evidence_snapshot, render_advisor_activity_dashboard, simplify_run_title
 from agent.advisor.storage.trace_store import AdvisorTraceStore
 from agent.advisor.training.training_runtime import CheckpointLifecycleManager, TrainingCheckpointRecord
 
@@ -193,6 +193,28 @@ def test_activity_snapshot_counts_trajectory_coverage_by_run_id(tmp_path):
     assert snapshot["evidence"]["blocked"] is True
     assert snapshot["evidence"]["blocking_reasons"] == ["missing_trajectories"]
 
+
+def test_evidence_snapshot_batches_lineage_coverage_without_per_run_lookup(tmp_path, monkeypatch):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    _seed_activity_run(store, run_id="run-with-lineage", with_reward=True, with_lineage=True, with_trajectory=True)
+    _seed_activity_run(store, run_id="run-without-lineage", with_reward=True, with_trajectory=True)
+
+    def fail_per_run_lineage_lookup(run_id):
+        raise AssertionError(f"unexpected per-run lineage lookup for {run_id}")
+
+    monkeypatch.setattr(store, "get_lineage", fail_per_run_lineage_lookup)
+
+    snapshot = build_advisor_evidence_snapshot(store)
+
+    assert snapshot["database_counts"] == {
+        "runs": 2,
+        "outcomes": 2,
+        "reward_labels": 2,
+        "lineages": 1,
+        "trajectories": 2,
+    }
+    assert snapshot["blocked"] is True
+    assert snapshot["blocking_reasons"] == ["missing_lineages"]
 
 
 def test_activity_snapshot_reports_active_adapter_artifact_evidence(tmp_path):
