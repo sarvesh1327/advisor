@@ -120,8 +120,22 @@ class MLXAdvisorRuntime:
                 return str(candidate)
         raise FileNotFoundError(f"missing adapter artifact under checkpoint dir: {root}")
 
+    def resolve_manifest_adapter_artifact(self, checkpoint_metadata: dict) -> str:
+        artifact_paths = checkpoint_metadata.get("artifact_paths") or {}
+        if "adapter_model" not in artifact_paths:
+            return self.resolve_adapter_artifact(checkpoint_metadata["checkpoint_path"])
+
+        adapter_model_path = Path(str(artifact_paths["adapter_model"])).expanduser()
+        if not adapter_model_path.is_absolute():
+            adapter_model_path = Path(checkpoint_metadata["checkpoint_path"]) / adapter_model_path
+        if not adapter_model_path.exists():
+            raise FileNotFoundError(
+                f"missing adapter_model adapter artifact for active checkpoint: {adapter_model_path}"
+            )
+        return str(adapter_model_path)
+
     def resolve_active_profile_adapter_metadata(self, advisor_profile_id: str | None = None) -> dict | None:
-        # Active checkpoints are optional; when present they must resolve to a loadable adapter directory.
+        # Active checkpoints are optional; when present their manifest chooses the adapter artifact.
         resolved_profile_id = advisor_profile_id or self.settings.advisor_profile_id
         lifecycle_manager = CheckpointLifecycleManager(self._artifacts_root())
         try:
@@ -137,7 +151,7 @@ class MLXAdvisorRuntime:
         if registry is not None:
             training_spec = self.resolve_profile_training_spec(registry, resolved_profile_id)
             base_model_name = training_spec["base_model_name"]
-        adapter_artifact_path = self.resolve_adapter_artifact(checkpoint_metadata["checkpoint_path"])
+        adapter_artifact_path = self.resolve_manifest_adapter_artifact(checkpoint_metadata)
         return {
             **checkpoint_metadata,
             "advisor_profile_id": resolved_profile_id,
