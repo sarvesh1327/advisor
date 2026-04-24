@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -301,12 +302,20 @@ class AdvisorTraceStore:
                 "SELECT manifest_json, lineage_json FROM run_lineages WHERE run_id = ?",
                 (run_id,),
             ).fetchone()
-        if not row:
+        if row is None:
             return None
         return {
             "manifest": json.loads(row["manifest_json"]),
             "lineage": json.loads(row["lineage_json"]),
         }
+
+    def list_lineage_run_ids(self, run_ids: Iterable[str] | None = None) -> set[str]:
+        requested_run_ids = {str(run_id) for run_id in run_ids or [] if run_id}
+        with self._connect() as conn:
+            lineage_run_ids = {row["run_id"] for row in conn.execute("SELECT run_id FROM run_lineages").fetchall()}
+        if run_ids is None:
+            return lineage_run_ids
+        return lineage_run_ids & requested_run_ids
 
     def record_trajectory(self, trajectory: AdvisorTrajectory | dict) -> None:
         # Normalize before storage so all trajectory reads share one JSON contract.

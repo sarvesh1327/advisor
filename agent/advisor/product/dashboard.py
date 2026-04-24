@@ -64,12 +64,13 @@ def build_advisor_evidence_snapshot(
 ) -> dict:
     rows = store.list_runs(include_context=False)
     run_ids = {row.get("run_id") for row in rows if row.get("run_id")}
+    lineage_run_ids = store.list_lineage_run_ids(run_ids)
     trajectory_run_ids = {trajectory.get("run_id") for trajectory in store.list_trajectories() if trajectory.get("run_id") in run_ids}
     database_counts = {
         "runs": len(rows),
         "outcomes": sum(1 for row in rows if row.get("outcome")),
         "reward_labels": sum(1 for row in rows if row.get("reward_label")),
-        "lineages": sum(1 for row in rows if store.get_lineage(row.get("run_id")) is not None),
+        "lineages": len(lineage_run_ids),
         "trajectories": len(trajectory_run_ids),
     }
     artifact_counts = {
