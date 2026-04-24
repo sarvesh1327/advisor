@@ -151,6 +151,9 @@ def test_validation_gate_route_reports_failed_jobs_and_missing_rollback(tmp_path
     payload = response.json()
     assert payload["pass"] is False
     assert "required_profiles" in payload["failed_checks"]
+    assert payload["evidence"]["database_counts"]["runs"] == 0
+    assert payload["evidence"]["database_counts"]["reward_labels"] == 0
+    assert payload["evidence"]["artifact_counts"]["active_checkpoints"] == 0
 
 
 

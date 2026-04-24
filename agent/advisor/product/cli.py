@@ -26,6 +26,7 @@ from agent.advisor.product.hardening import (
     export_product_bundle,
     import_product_bundle,
 )
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 try:
@@ -221,6 +222,8 @@ def _handle_activity_dashboard(args) -> int:
         gateway.trace_store,
         args.output_path or default_output,
         limit=args.limit,
+        lifecycle_manager=_build_lifecycle_manager(settings),
+        required_profiles=_gateway_profile_ids(gateway),
     )
     print(json.dumps(payload, ensure_ascii=False))
     return 0
@@ -337,6 +340,7 @@ def _handle_validation_gate(args) -> int:
         lifecycle_manager=_build_lifecycle_manager(settings),
         job_records=OperatorJobQueue(_queue_path(settings)).list_jobs(),
         required_profiles=args.required_profile,
+        trace_store=AdvisorTraceStore(settings.trace_db_path),
     )
     print(json.dumps(report, ensure_ascii=False))
     return 0
@@ -439,6 +443,13 @@ def _queue_path(settings: AdvisorSettings) -> Path:
 
 def _build_lifecycle_manager(settings: AdvisorSettings) -> CheckpointLifecycleManager:
     return CheckpointLifecycleManager(Path(settings.trace_db_path).expanduser().parent / "artifacts")
+
+
+
+def _gateway_profile_ids(gateway) -> list[str]:
+    registry = getattr(gateway, "profile_registry", None)
+    profiles = getattr(registry, "profiles", None)
+    return sorted(profiles.keys()) if profiles else []
 
 
 

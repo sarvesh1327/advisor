@@ -11,6 +11,8 @@ from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.evaluation.measurement import build_phase5_measurement_report
 from agent.advisor.learning.state import AutonomousLearningStateStore, state_path_for_root
 from agent.advisor.operators.operator_runtime import OperatorJobRecord
+from agent.advisor.product.dashboard import build_advisor_evidence_snapshot
+from agent.advisor.storage.trace_store import AdvisorTraceStore
 from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 
@@ -46,6 +48,7 @@ def build_phase8_validation_report(
     job_records: list[OperatorJobRecord] | list[dict] | None = None,
     required_profiles: list[str] | None = None,
     policy: Phase8ValidationPolicy | None = None,
+    trace_store: AdvisorTraceStore | None = None,
 ) -> dict:
     active_policy = policy or Phase8ValidationPolicy()
     measurement = build_phase5_measurement_report(
@@ -68,6 +71,11 @@ def build_phase8_validation_report(
         profile_failed_checks.extend(f"{profile_id}:{name}" for name, item in profile_report["checks"].items() if not item["pass"])
 
     job_summary = _build_phase8_job_summary(normalized_jobs)
+    evidence = build_advisor_evidence_snapshot(
+        trace_store,
+        lifecycle_manager=lifecycle_manager,
+        required_profiles=resolved_required_profiles,
+    ) if trace_store is not None else None
     failed_jobs_check = {
         "actual": job_summary["failed"],
         "threshold": active_policy.max_failed_jobs,
@@ -95,6 +103,7 @@ def build_phase8_validation_report(
         },
         "profiles": profile_reports,
         "measurement": measurement,
+        "evidence": evidence or {},
     }
 
 

@@ -332,6 +332,8 @@ def test_cli_hardening_profile_and_release_gate_commands(monkeypatch, tmp_path, 
     assert validation_exit == 0
     assert validation_payload["pass"] is False
     assert "required_profiles" in validation_payload["failed_checks"]
+    assert validation_payload["evidence"]["database_counts"]["runs"] == 0
+    assert validation_payload["evidence"]["artifact_counts"]["active_checkpoints"] == 0
     assert learning_status_exit == 0
     assert learning_status_payload["controller_paused"] is False
     assert learning_pause_exit == 0
