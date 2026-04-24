@@ -344,14 +344,16 @@ class AdvisorTraceStore:
     def list_trajectories(self, run_id: str | None = None) -> list[dict]:
         # Optional run filtering keeps later rollout ingestion cheap and deterministic.
         if run_id is None:
-            query = "SELECT * FROM advisor_trajectories ORDER BY created_at DESC"
+            query = "SELECT * FROM advisor_trajectories"
             params: tuple[str, ...] = ()
         else:
-            query = "SELECT * FROM advisor_trajectories WHERE run_id = ? ORDER BY created_at DESC"
+            query = "SELECT * FROM advisor_trajectories WHERE run_id = ?"
             params = (run_id,)
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [self._row_to_trajectory_dict(row) for row in rows]
+        trajectories = [self._row_to_trajectory_dict(row) for row in rows]
+        # Sort after JSON shaping so offset-aware timestamps compare by absolute UTC time.
+        return sorted(trajectories, key=self._trajectory_created_at_sort_key, reverse=True)
 
     def get_run(self, run_id: str) -> dict | None:
         with self._connect() as conn:
@@ -484,6 +486,18 @@ class AdvisorTraceStore:
             "budget": json.loads(row["budget_json"]) if row["budget_json"] else {},
             "created_at": row["created_at"],
         }
+
+    @staticmethod
+    def _trajectory_created_at_sort_key(trajectory: dict) -> tuple[datetime, str]:
+        # Normalize offsets before sorting; lexical ISO order is wrong across zones.
+        raw_created_at = str(trajectory.get("created_at") or "")
+        try:
+            parsed = datetime.fromisoformat(raw_created_at.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = datetime.min.replace(tzinfo=UTC)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return (parsed.astimezone(UTC), str(trajectory.get("trajectory_id") or ""))
 
     def find_recent_failures(
         self,

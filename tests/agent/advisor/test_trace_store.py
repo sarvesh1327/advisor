@@ -121,6 +121,46 @@ def test_trace_store_persists_and_loads_trajectory(tmp_path):
     assert store.list_trajectories(run_id="run-trajectory")[0]["stop_reason"] == "success"
 
 
+def test_trace_store_orders_trajectories_by_absolute_created_time(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    packet = _packet("run-order")
+    advice = AdviceBlock(task_type="bugfix")
+    base_turn = AdvisorTrajectoryTurn(
+        turn_index=0,
+        state_packet=packet,
+        advice=advice,
+        observation=TurnObservation(turn_index=0, status="success"),
+    )
+
+    store.record_trajectory(
+        AdvisorTrajectory(
+            trajectory_id="earlier-utc",
+            run_id="run-order",
+            advisor_profile_id=DEFAULT_PROFILE_ID,
+            task_text="fix prompt builder",
+            turns=[base_turn],
+            stop_reason="success",
+            created_at="2026-01-01T00:30:00+01:00",
+        )
+    )
+    store.record_trajectory(
+        AdvisorTrajectory(
+            trajectory_id="later-utc",
+            run_id="run-order",
+            advisor_profile_id=DEFAULT_PROFILE_ID,
+            task_text="fix prompt builder",
+            turns=[base_turn],
+            stop_reason="success",
+            created_at="2025-12-31T23:45:00+00:00",
+        )
+    )
+
+    assert [item["trajectory_id"] for item in store.list_trajectories(run_id="run-order")] == [
+        "later-utc",
+        "earlier-utc",
+    ]
+
+
 def test_trace_store_replays_canonical_generic_packet_state(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     packet = AdvisorInputPacket(
