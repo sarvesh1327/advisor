@@ -125,12 +125,16 @@ class MLXAdvisorRuntime:
         if "adapter_model" not in artifact_paths:
             return self.resolve_adapter_artifact(checkpoint_metadata["checkpoint_path"])
 
-        adapter_model_path = Path(str(artifact_paths["adapter_model"])).expanduser()
+        adapter_model_value = str(artifact_paths["adapter_model"]).strip()
+        if not adapter_model_value:
+            raise FileNotFoundError("missing adapter_model adapter artifact for active checkpoint: <empty>")
+
+        adapter_model_path = Path(adapter_model_value).expanduser()
         if not adapter_model_path.is_absolute():
             adapter_model_path = Path(checkpoint_metadata["checkpoint_path"]) / adapter_model_path
-        if not adapter_model_path.exists():
+        if not adapter_model_path.is_file():
             raise FileNotFoundError(
-                f"missing adapter_model adapter artifact for active checkpoint: {adapter_model_path}"
+                f"missing adapter_model adapter artifact file for active checkpoint: {adapter_model_path}"
             )
         return str(adapter_model_path)
 

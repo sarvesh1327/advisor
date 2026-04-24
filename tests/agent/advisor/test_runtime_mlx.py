@@ -190,6 +190,36 @@ def test_runtime_raises_clear_error_when_adapter_artifact_is_missing(tmp_path):
 
 
 
+def test_runtime_rejects_empty_manifest_adapter_model_path(tmp_path):
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+    checkpoint_dir = tmp_path / "checkpoints" / "coding-default-ckpt"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        runtime.resolve_manifest_adapter_artifact(
+            {
+                "checkpoint_path": str(checkpoint_dir),
+                "artifact_paths": {"adapter_model": ""},
+            }
+        )
+
+
+
+def test_runtime_rejects_directory_manifest_adapter_model_path(tmp_path):
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+    checkpoint_dir = tmp_path / "checkpoints" / "coding-default-ckpt"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        runtime.resolve_manifest_adapter_artifact(
+            {
+                "checkpoint_path": str(checkpoint_dir),
+                "artifact_paths": {"adapter_model": str(checkpoint_dir)},
+            }
+        )
+
+
+
 def test_runtime_resolves_active_profile_adapter_metadata_from_promoted_checkpoint(tmp_path):
     profiles_path = tmp_path / "profiles.toml"
     profiles_path.write_text(
