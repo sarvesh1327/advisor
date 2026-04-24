@@ -190,6 +190,36 @@ def test_runtime_raises_clear_error_when_adapter_artifact_is_missing(tmp_path):
 
 
 
+def test_runtime_rejects_empty_manifest_adapter_model_path(tmp_path):
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+    checkpoint_dir = tmp_path / "checkpoints" / "coding-default-ckpt"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        runtime.resolve_manifest_adapter_artifact(
+            {
+                "checkpoint_path": str(checkpoint_dir),
+                "artifact_paths": {"adapter_model": ""},
+            }
+        )
+
+
+
+def test_runtime_rejects_directory_manifest_adapter_model_path(tmp_path):
+    runtime = MLXAdvisorRuntime(AdvisorSettings())
+    checkpoint_dir = tmp_path / "checkpoints" / "coding-default-ckpt"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        runtime.resolve_manifest_adapter_artifact(
+            {
+                "checkpoint_path": str(checkpoint_dir),
+                "artifact_paths": {"adapter_model": str(checkpoint_dir)},
+            }
+        )
+
+
+
 def test_runtime_resolves_active_profile_adapter_metadata_from_promoted_checkpoint(tmp_path):
     profiles_path = tmp_path / "profiles.toml"
     profiles_path.write_text(
@@ -359,6 +389,82 @@ def test_runtime_loads_active_profile_adapter_when_present(monkeypatch, tmp_path
         }
     ]
     assert runtime.capabilities()["active_model_name"] == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+
+
+
+def test_runtime_uses_checkpoint_manifest_adapter_artifact_as_source_of_truth(monkeypatch, tmp_path):
+    profiles_path = tmp_path / "profiles.toml"
+    profiles_path.write_text(
+        "\n".join(
+            [
+                'default_profile_id = "coding-default"',
+                "",
+                "[profiles.coding-default]",
+                'domain = "coding"',
+                'description = "Default coding advisor profile"',
+                "",
+                "[profiles.coding-default.training]",
+                'backend = "grpo"',
+                'base_model_name = "mlx-community/Qwen2.5-3B-Instruct-4bit"',
+                'adapter_method = "lora"',
+                'rollout_group_size = 4',
+                'num_generations = 8',
+                'max_steps = 12',
+                'max_prompt_tokens = 4096',
+                'max_completion_tokens = 1024',
+                'checkpoint_root = "checkpoints/coding-default"',
+                'target_modules = ["q_proj"]',
+                'lora_rank = 32',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    artifacts_root = tmp_path / "artifacts"
+    checkpoint_dir = artifacts_root / "checkpoints" / "coding-default" / "coding-active"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "adapters.safetensors").write_bytes(b"stray-adapter")
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "coding-active",
+                "advisor_profile_id": "coding-default",
+                "artifact_paths": {
+                    "adapter_model": str(checkpoint_dir / "missing-adapters.safetensors"),
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_root / "checkpoint_registry.json").write_text(
+        json.dumps(
+            [
+                {
+                    "checkpoint_id": "coding-active",
+                    "experiment_id": "exp-14",
+                    "path": str(checkpoint_dir),
+                    "status": "active",
+                    "benchmark_summary": {},
+                    "rollback_reason": None,
+                    "advisor_profile_id": "coding-default",
+                }
+            ],
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_mlx, "mlx_lm_load", lambda *_args, **_kwargs: (SimpleNamespace(), StubTokenizer()))
+    runtime = MLXAdvisorRuntime(
+        AdvisorSettings(
+            enable_fallback_runtime=False,
+            trace_db_path=str(tmp_path / "advisor.db"),
+            advisor_profiles_path=str(profiles_path),
+            advisor_profile_id="coding-default",
+        )
+    )
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        runtime._ensure_loaded(advisor_profile_id="coding-default")
 
 
 
