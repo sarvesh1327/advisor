@@ -217,9 +217,9 @@ def _fresh_training_records(
             continue
         if trajectory_id in consumed_trajectories or run_id in consumed_runs:
             continue
-        final_reward = trajectory.get("final_reward") or {}
+        final_reward = trajectory.get("final_reward")
         final_outcome = trajectory.get("final_outcome") or {}
-        if final_reward.get("total_reward") is None:
+        if not _trajectory_has_final_reward(final_reward):
             continue
         if final_outcome.get("status") is None:
             continue
@@ -244,6 +244,13 @@ def _fresh_training_records(
             lineage=lineage,
             trajectory=trajectory,
         )
+
+
+def _trajectory_has_final_reward(final_reward) -> bool:
+    if isinstance(final_reward, dict):
+        return final_reward.get("total_reward") is not None
+    return isinstance(final_reward, (int, float)) and not isinstance(final_reward, bool)
+
 
 
 def _fresh_rewarded_run_records(

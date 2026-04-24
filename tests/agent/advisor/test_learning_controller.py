@@ -93,6 +93,15 @@ def _overwrite_run_reward(settings: AdvisorSettings, run_id: str, total_reward: 
 
 
 
+def _overwrite_trajectory_final_reward(settings: AdvisorSettings, run_id: str, final_reward) -> None:
+    with sqlite3.connect(settings.trace_db_path) as conn:
+        conn.execute(
+            "UPDATE advisor_trajectories SET final_reward_json = ? WHERE run_id = ?",
+            (json.dumps(final_reward), run_id),
+        )
+
+
+
 def _seed_dogfood_runs(tmp_path, prefix: str, count: int = 4):
     first_settings = None
     first_store = None
@@ -324,6 +333,38 @@ def test_collect_fresh_rollout_groups_uses_canonical_run_reward_over_stale_traje
     )
     assert corrected.reward_label.total_reward == 0.99
     assert 0.99 in collection.rollout_group.reward_values
+
+
+
+def test_learning_readiness_accepts_scalar_trajectory_final_reward_for_eligibility(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-scalar-trajectory-reward")
+    _overwrite_trajectory_final_reward(settings, "run-scalar-trajectory-reward-1", 0.5)
+    _overwrite_run_reward(settings, "run-scalar-trajectory-reward-1", 0.99)
+    registry = AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path)
+    state = AutonomousLearningState()
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+    collection = collect_fresh_rollout_groups(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+
+    assert report.ready is True
+    assert 0.99 in report.reward_values
+    assert collection is not None
+    scalar_source = next(
+        result
+        for result in collection.rollout_group.results
+        if result.diagnostics["source_run_id"] == "run-scalar-trajectory-reward-1"
+    )
+    assert scalar_source.reward_label.total_reward == 0.99
 
 
 
