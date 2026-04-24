@@ -254,11 +254,23 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
 
     @app.get("/v1/operator/advisor-activity")
     def operator_advisor_activity(limit: int = 20):
-        return build_advisor_activity_snapshot(gateway.trace_store, limit=limit)
+        return build_advisor_activity_snapshot(
+            gateway.trace_store,
+            limit=limit,
+            lifecycle_manager=lifecycle_manager,
+            required_profiles=sorted(gateway.profile_registry.profiles.keys()),
+        )
 
     @app.get("/dashboard/advisor-activity", response_class=HTMLResponse)
     def operator_advisor_activity_dashboard(limit: int = 20):
-        return render_advisor_activity_dashboard(build_advisor_activity_snapshot(gateway.trace_store, limit=limit))
+        return render_advisor_activity_dashboard(
+            build_advisor_activity_snapshot(
+                gateway.trace_store,
+                limit=limit,
+                lifecycle_manager=lifecycle_manager,
+                required_profiles=sorted(gateway.profile_registry.profiles.keys()),
+            )
+        )
 
     @app.get("/v1/operator/jobs")
     def operator_jobs():
@@ -325,6 +337,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             lifecycle_manager=lifecycle_manager,
             job_records=operator_queue.list_jobs(),
             required_profiles=req.required_profiles,
+            trace_store=gateway.trace_store,
         )
 
     @app.get("/v1/learning/controller")
