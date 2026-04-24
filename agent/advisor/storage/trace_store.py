@@ -5,7 +5,14 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, FailureSignal, RewardLabel
+from agent.advisor.core.schemas import (
+    AdviceBlock,
+    AdvisorInputPacket,
+    AdvisorOutcome,
+    AdvisorTrajectory,
+    FailureSignal,
+    RewardLabel,
+)
 
 
 class AdvisorTraceStore:
@@ -96,6 +103,18 @@ class AdvisorTraceStore:
                   run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
                   manifest_json TEXT NOT NULL,
                   lineage_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS advisor_trajectories (
+                  trajectory_id TEXT PRIMARY KEY,
+                  run_id TEXT NOT NULL,
+                  advisor_profile_id TEXT NOT NULL,
+                  task_text TEXT NOT NULL,
+                  turns_json TEXT NOT NULL,
+                  final_outcome_json TEXT,
+                  final_reward_json TEXT,
+                  stop_reason TEXT NOT NULL,
+                  budget_json TEXT NOT NULL,
                   created_at TEXT NOT NULL
                 );
                 """
@@ -289,6 +308,51 @@ class AdvisorTraceStore:
             "lineage": json.loads(row["lineage_json"]),
         }
 
+    def record_trajectory(self, trajectory: AdvisorTrajectory | dict) -> None:
+        # Normalize before storage so all trajectory reads share one JSON contract.
+        normalized = trajectory if isinstance(trajectory, AdvisorTrajectory) else AdvisorTrajectory.model_validate(trajectory)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO advisor_trajectories(
+                    trajectory_id, run_id, advisor_profile_id, task_text, turns_json,
+                    final_outcome_json, final_reward_json, stop_reason, budget_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized.trajectory_id,
+                    normalized.run_id,
+                    normalized.advisor_profile_id,
+                    normalized.task_text,
+                    json.dumps([turn.model_dump() for turn in normalized.turns]),
+                    json.dumps(normalized.final_outcome) if normalized.final_outcome is not None else None,
+                    json.dumps(normalized.final_reward) if normalized.final_reward is not None else None,
+                    normalized.stop_reason,
+                    json.dumps(normalized.budget),
+                    normalized.created_at,
+                ),
+            )
+
+    def get_trajectory(self, trajectory_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM advisor_trajectories WHERE trajectory_id = ?",
+                (trajectory_id,),
+            ).fetchone()
+        return self._row_to_trajectory_dict(row) if row else None
+
+    def list_trajectories(self, run_id: str | None = None) -> list[dict]:
+        # Optional run filtering keeps later rollout ingestion cheap and deterministic.
+        if run_id is None:
+            query = "SELECT * FROM advisor_trajectories ORDER BY created_at DESC"
+            params: tuple[str, ...] = ()
+        else:
+            query = "SELECT * FROM advisor_trajectories WHERE run_id = ? ORDER BY created_at DESC"
+            params = (run_id,)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_trajectory_dict(row) for row in rows]
+
     def get_run(self, run_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -341,6 +405,7 @@ class AdvisorTraceStore:
         with self._connect() as conn:
             for table_name in (
                 "training_examples",
+                "advisor_trajectories",
                 "run_lineages",
                 "reward_labels",
                 "run_outcomes",
@@ -404,6 +469,21 @@ class AdvisorTraceStore:
             )
             result["input"] = packet.model_dump()
         return result
+
+    def _row_to_trajectory_dict(self, row: sqlite3.Row) -> dict:
+        # Keep DB reads shaped exactly like AdvisorTrajectory.model_dump().
+        return {
+            "trajectory_id": row["trajectory_id"],
+            "run_id": row["run_id"],
+            "advisor_profile_id": row["advisor_profile_id"],
+            "task_text": row["task_text"],
+            "turns": json.loads(row["turns_json"]) if row["turns_json"] else [],
+            "final_outcome": json.loads(row["final_outcome_json"]) if row["final_outcome_json"] else None,
+            "final_reward": json.loads(row["final_reward_json"]) if row["final_reward_json"] else None,
+            "stop_reason": row["stop_reason"],
+            "budget": json.loads(row["budget_json"]) if row["budget_json"] else {},
+            "created_at": row["created_at"],
+        }
 
     def find_recent_failures(
         self,

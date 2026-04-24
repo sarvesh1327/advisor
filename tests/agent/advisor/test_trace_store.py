@@ -7,9 +7,13 @@ from agent.advisor.core.schemas import (
     AdvisorInputPacket,
     AdvisorOutcome,
     AdvisorTask,
+    AdvisorTrajectory,
+    AdvisorTrajectoryTurn,
     CandidateFile,
     ExecutorInjectionPolicy,
     RepoSummary,
+    RewardLabel,
+    TurnObservation,
 )
 from agent.advisor.rewards.reward_model import compute_reward_label
 from agent.advisor.storage.trace_store import AdvisorTraceStore
@@ -66,6 +70,55 @@ def test_trace_store_roundtrip(tmp_path):
     assert row["input"]["task"]["domain"] == "coding"
     assert row["input"]["artifacts"][0]["locator"] == "main.py"
     assert row["input"]["context"]["metadata"]["repo"]["path"] == "/tmp/repo"
+
+
+def test_trace_store_persists_and_loads_trajectory(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    packet = _packet("run-trajectory")
+    advice = AdviceBlock(task_type="bugfix", recommended_plan=["inspect main.py"], confidence=0.8)
+    trajectory = AdvisorTrajectory(
+        trajectory_id="traj-1",
+        run_id="run-trajectory",
+        advisor_profile_id=DEFAULT_PROFILE_ID,
+        task_text="fix prompt builder",
+        turns=[
+            AdvisorTrajectoryTurn(
+                turn_index=0,
+                state_packet=packet,
+                advice=advice,
+                observation=TurnObservation(
+                    turn_index=0,
+                    status="success",
+                    executor_output="patched main.py",
+                    summary="executor finished",
+                    files_touched=["main.py"],
+                    tests_run=["pytest -q"],
+                    verifier_hints=["all checks passed"],
+                    metrics={"tokens": 100},
+                ),
+                reward_hint=0.75,
+            )
+        ],
+        final_outcome=AdvisorOutcome(run_id="run-trajectory", status="success", files_touched=["main.py"]),
+        final_reward=RewardLabel(
+            run_id="run-trajectory",
+            advisor_profile_id=DEFAULT_PROFILE_ID,
+            total_reward=0.75,
+            quality_score=0.75,
+        ),
+        stop_reason="success",
+        budget={"max_turns": 3},
+    )
+
+    store.record_trajectory(trajectory)
+
+    loaded = store.get_trajectory("traj-1")
+    assert loaded is not None
+    assert loaded["trajectory_id"] == "traj-1"
+    assert loaded["advisor_profile_id"] == DEFAULT_PROFILE_ID
+    assert loaded["turns"][0]["observation"]["files_touched"] == ["main.py"]
+    assert loaded["final_reward"]["total_reward"] == 0.75
+    assert store.list_trajectories(run_id="run-trajectory")[0]["stop_reason"] == "success"
 
 
 def test_trace_store_replays_canonical_generic_packet_state(tmp_path):

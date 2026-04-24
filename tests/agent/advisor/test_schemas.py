@@ -6,12 +6,17 @@ from agent.advisor.core.schemas import (
     AdvisorContext,
     AdvisorHistoryEntry,
     AdvisorInputPacket,
+    AdvisorOutcome,
     AdvisorTask,
+    AdvisorTrajectory,
+    AdvisorTrajectoryTurn,
     CandidateFile,
     ExecutorInjectionPolicy,
     FailureSignal,
     FocusTarget,
     RepoSummary,
+    RewardLabel,
+    TurnObservation,
 )
 
 
@@ -130,3 +135,45 @@ def test_advice_block_exposes_explicit_executor_injection_policy():
         min_confidence=0.0,
         include_confidence_note=True,
     )
+
+
+def test_trajectory_models_round_trip_nested_turns():
+    packet = AdvisorInputPacket(
+        run_id="run-trajectory",
+        task_text="fix the rollout loop",
+        task_type="implementation",
+        repo={"path": "/tmp/advisor", "branch": "main", "dirty": False},
+        repo_summary=RepoSummary(modules=["training"], hotspots=["training_rollouts.py"]),
+        candidate_files=[CandidateFile(path="training_rollouts.py", reason="owns rollout loop", score=1.0)],
+        token_budget=1200,
+    )
+    advice = AdviceBlock(task_type="implementation", recommended_plan=["advance one executor step"], confidence=0.9)
+    observation = TurnObservation(
+        turn_index=0,
+        status="partial",
+        executor_output="patched first step",
+        summary="executor advanced one turn",
+        files_touched=["training_rollouts.py"],
+        tests_run=["pytest tests/agent/advisor/test_training_rollouts.py -q"],
+        verifier_hints=["loop still needs stop policy"],
+        error_messages=[],
+        metrics={"tokens": 42},
+    )
+    trajectory = AdvisorTrajectory(
+        trajectory_id="traj-1",
+        run_id="run-trajectory",
+        advisor_profile_id="generalist",
+        task_text="fix the rollout loop",
+        turns=[AdvisorTrajectoryTurn(turn_index=0, state_packet=packet, advice=advice, observation=observation)],
+        final_outcome=AdvisorOutcome(run_id="run-trajectory", status="partial", summary="needs another turn"),
+        final_reward=RewardLabel(run_id="run-trajectory", advisor_profile_id="generalist", total_reward=0.5, quality_score=0.5),
+        stop_reason="max_turns",
+        budget={"max_turns": 1},
+    )
+
+    restored = AdvisorTrajectory.model_validate(trajectory.model_dump())
+
+    assert restored.turns[0].state_packet["task"]["domain"] == "coding"
+    assert restored.turns[0].advice["recommended_plan"] == ["advance one executor step"]
+    assert restored.turns[0].observation.files_touched == ["training_rollouts.py"]
+    assert restored.final_reward["total_reward"] == 0.5
