@@ -339,6 +339,7 @@ def test_orchestrator_routes_baseline_runs_without_injecting_advice(tmp_path):
 
     assert result.manifest.routing_decision.arm == "baseline"
     assert captured == {"rendered_advice": None, "arm": "baseline"}
+    assert store.list_trajectories(run_id=result.run_id) == []
 
 
 def test_orchestrator_supports_optional_second_pass_review(tmp_path):

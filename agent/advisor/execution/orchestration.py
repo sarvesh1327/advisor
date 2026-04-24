@@ -417,17 +417,18 @@ class AdvisorOrchestrator:
             reward_label=reward_label,
         )
         self.trace_store.record_lineage(packet.run_id, manifest, lineage)
-        self.trace_store.record_trajectory(
-            self._build_live_run_trajectory(
-                packet,
-                primary_advice,
-                executor_result,
-                verifier_results,
-                outcome,
-                reward_label,
-                advisor_profile_id=resolved_profile.profile_id,
+        if routing_decision.arm == "advisor":
+            self.trace_store.record_trajectory(
+                self._build_live_run_trajectory(
+                    packet,
+                    primary_advice,
+                    executor_result,
+                    verifier_results,
+                    outcome,
+                    reward_label,
+                    advisor_profile_id=resolved_profile.profile_id,
+                )
             )
-        )
         self.event_logger.log("run.completed", run_id=packet.run_id, stage="lineage", payload={"status": outcome.status})
         return LiveRunResult(run_id=packet.run_id, manifest=manifest, lineage=lineage)
 
