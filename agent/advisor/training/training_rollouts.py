@@ -146,6 +146,7 @@ def execute_training_rollout(
 
     assert primary_advice is not None
     assert final_executor_result is not None
+    final_executor_result = _executor_result_with_turn_metrics(final_executor_result, turn_count=len(trajectory_turns))
     outcome = _build_outcome(request.packet.run_id, final_executor_result, verifier_records)
     constraint_violations = [
         item
@@ -220,6 +221,18 @@ def _step_result_to_executor_result(step_result: ExecutorStepResult) -> Executor
         metadata=dict(step_result.metrics),
         retries=retries,
     )
+
+
+def _executor_result_with_turn_metrics(result: ExecutorRunResult, *, turn_count: int) -> ExecutorRunResult:
+    # Missing step metrics should reflect the actual rollout length, not a one-step solve.
+    metadata = dict(result.metadata)
+    if "steps" not in metadata:
+        metadata["steps"] = max(1, turn_count)
+    retries = result.retries
+    if "retries" not in metadata:
+        retries = max(0, turn_count - 1)
+        metadata["retries"] = retries
+    return result.model_copy(update={"metadata": metadata, "retries": retries})
 
 
 def _observation_from_step_result(

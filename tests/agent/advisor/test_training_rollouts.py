@@ -133,6 +133,36 @@ def test_execute_training_rollout_calls_runtime_once_per_turn_until_success():
     assert result.diagnostics["stop_reason"] == "success"
 
 
+def test_execute_training_rollout_derives_retries_from_multi_turn_count_when_metrics_missing():
+    runtime = StepRuntime()
+    executor = SequencedStepExecutor(
+        [
+            ExecutorStepResult(status="partial", summary="draft patch", done=False),
+            ExecutorStepResult(status="success", summary="tests green", done=True),
+        ]
+    )
+    request = TrainingRolloutRequest(
+        rollout_id="rollout-derived-retries",
+        advisor_profile_id="coding-default",
+        packet=_packet("run-derived-retries"),
+        executor_name="step-executor",
+        executor_kind="coding_agent",
+        max_turns=3,
+    )
+
+    result = execute_training_rollout(
+        request,
+        runtime=runtime,
+        executor=executor,
+        verifiers=[],
+        reward_registry=RewardRegistry.default(),
+    )
+
+    assert result.executor_result.retries == 1
+    assert result.executor_result.metadata["steps"] == 2
+    assert result.reward_label.reward_diagnostics["steps"] == 2
+
+
 def test_execute_training_rollout_threads_previous_observations_into_next_packet():
     runtime = StepRuntime()
     executor = SequencedStepExecutor(
