@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CandidateFile(BaseModel):
@@ -271,3 +272,53 @@ class AdvisorTaskRunResult(BaseModel):
     advisor_profile_id: str
     model_version: str
     latency_ms: int
+
+
+class TurnObservation(BaseModel):
+    # Per-turn observations are the executor/verifier state seen by the next advisor call.
+    turn_index: int
+    status: str
+    executor_output: str | None = None
+    summary: str | None = None
+    files_touched: list[str] = Field(default_factory=list)
+    tests_run: list[str] = Field(default_factory=list)
+    verifier_hints: list[str] = Field(default_factory=list)
+    error_messages: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdvisorTrajectoryTurn(BaseModel):
+    # Store normalized dict payloads so trajectory JSON is stable across schema revisions.
+    turn_index: int
+    state_packet: dict[str, Any]
+    advice: dict[str, Any]
+    observation: TurnObservation
+    reward_hint: float | None = None
+
+    @field_validator("state_packet", "advice", mode="before")
+    @classmethod
+    def normalize_model_payloads(cls, value):
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+        return value
+
+
+class AdvisorTrajectory(BaseModel):
+    # A trajectory is the training unit: every turn plus one final outcome/reward.
+    trajectory_id: str
+    run_id: str
+    advisor_profile_id: str
+    task_text: str
+    turns: list[AdvisorTrajectoryTurn] = Field(default_factory=list)
+    final_outcome: dict[str, Any] | None = None
+    final_reward: dict[str, Any] | None = None
+    stop_reason: str
+    budget: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+    @field_validator("final_outcome", "final_reward", mode="before")
+    @classmethod
+    def normalize_optional_model_payloads(cls, value):
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+        return value
