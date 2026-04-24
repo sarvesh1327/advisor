@@ -453,3 +453,41 @@ def test_grpo_training_backend_persists_lora_config_in_adapter_manifest(tmp_path
         "up_proj",
         "down_proj",
     ]
+
+
+def test_grpo_training_backend_manifest_records_real_lora_artifact_contract(tmp_path):
+    trainer = RecordingTrainer()
+    request = _multiturn_training_request().model_copy(update={"output_dir": str(tmp_path / "artifacts")})
+
+    result = GRPOTrainingBackend(trainer=trainer).run(request)
+
+    required_artifacts = {"adapter_model", "adapter_config", "checkpoint_manifest", "backend_manifest"}
+    backend_manifest_path = Path(result.artifact_paths["backend_manifest"])
+    checkpoint_manifest_path = Path(result.artifact_paths["checkpoint_manifest"])
+    backend_manifest = json.loads(backend_manifest_path.read_text(encoding="utf-8"))
+    checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+
+    assert required_artifacts <= set(result.artifact_paths)
+    assert all(Path(result.artifact_paths[key]).exists() for key in required_artifacts)
+    assert Path(result.artifact_paths["adapter_model"]).name == "adapters.safetensors"
+    assert Path(result.artifact_paths["adapter_config"]).name == "adapter_config.json"
+    assert checkpoint_manifest_path.name == "checkpoint.json"
+    assert backend_manifest_path.name == "backend-manifest.json"
+
+    assert backend_manifest["backend_name"] == "grpo"
+    assert backend_manifest["rollout_group_id"] == "group-1"
+    assert backend_manifest["trajectory_ids"] == ["traj-1"]
+    assert backend_manifest["advisor_profile_id"] == "coding-default"
+    assert backend_manifest["base_model_name"] == "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    assert backend_manifest["target_modules"] == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
+    assert backend_manifest["lora_rank"] == 32
+    assert backend_manifest["artifact_paths"] == result.artifact_paths
+    assert checkpoint_manifest["artifact_paths"] == result.artifact_paths

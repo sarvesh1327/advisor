@@ -11,6 +11,14 @@ from agent.advisor.profiles import AdvisorProfileRegistry
 from agent.advisor.training.training_backends import GRPOTrainingBackend
 from agent.advisor.training.training_rollouts import TrainingRolloutGroupResult
 
+_REQUIRED_TRAINING_ARTIFACTS = (
+    "adapter_model",
+    "adapter_config",
+    "checkpoint_manifest",
+    "backend_manifest",
+    "training_manifest",
+)
+
 
 class TrainingJobConfig(BaseModel):
     experiment_id: str
@@ -143,6 +151,8 @@ class CheckpointLifecycleManager:
         artifact_dir = self.artifacts_root / "training-jobs" / result.job_id
         artifact_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = artifact_dir / "training-manifest.json"
+        artifact_paths = dict(config.backend_artifact_paths)
+        artifact_paths.setdefault("training_manifest", str(manifest_path))
         manifest = {
             "job_id": result.job_id,
             "experiment_id": config.experiment_id,
@@ -155,11 +165,17 @@ class CheckpointLifecycleManager:
             "backend_name": config.backend_name,
             "rollout_group_id": config.rollout_group_id,
             "rollout_group_path": config.rollout_group_path,
-            "backend_artifact_paths": config.backend_artifact_paths,
+            "backend_artifact_paths": artifact_paths,
             "created_at": datetime.now(UTC).isoformat(),
         }
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-        return result.model_copy(update={"manifest_path": str(manifest_path), "artifact_dir": str(artifact_dir)})
+        return result.model_copy(
+            update={
+                "manifest_path": str(manifest_path),
+                "artifact_dir": str(artifact_dir),
+                "backend_artifact_paths": artifact_paths,
+            }
+        )
 
     def record_rollout_group(self, group: TrainingRolloutGroupResult, *, job_id: str) -> str:
         artifact_dir = self.artifacts_root / "training-jobs" / job_id
@@ -244,16 +260,6 @@ def run_profile_training_job(
             output_dir=str(lifecycle_manager.artifacts_root),
         )
     )
-    lifecycle_manager.register_checkpoint(
-        TrainingCheckpointRecord(
-            checkpoint_id=backend_result.checkpoint_id,
-            experiment_id=experiment_id,
-            path=backend_result.checkpoint_path,
-            status="candidate",
-            benchmark_summary={},
-            advisor_profile_id=advisor_profile_id,
-        )
-    )
     config = TrainingJobConfig(
         experiment_id=experiment_id,
         training_mode=selected_backend.backend_name,
@@ -278,7 +284,19 @@ def run_profile_training_job(
         rollout_group_id=rollout_group.group_id,
         backend_artifact_paths=backend_result.artifact_paths,
     )
-    return lifecycle_manager.record_training_job(result, config=config)
+    result = lifecycle_manager.record_training_job(result, config=config)
+    _validate_required_training_artifacts(result.backend_artifact_paths)
+    lifecycle_manager.register_checkpoint(
+        TrainingCheckpointRecord(
+            checkpoint_id=backend_result.checkpoint_id,
+            experiment_id=experiment_id,
+            path=backend_result.checkpoint_path,
+            status="candidate",
+            benchmark_summary={},
+            advisor_profile_id=advisor_profile_id,
+        )
+    )
+    return result
 
 
 def evaluate_profile_checkpoint_for_promotion(
@@ -365,6 +383,16 @@ def selected_backend_request(
         rollout_group=rollout_group,
         output_dir=output_dir,
     )
+
+
+def _validate_required_training_artifacts(artifact_paths: dict[str, str]) -> None:
+    for key in _REQUIRED_TRAINING_ARTIFACTS:
+        raw_path = artifact_paths.get(key)
+        if not raw_path:
+            raise FileNotFoundError(f"missing required training artifact path {key}")
+        path = Path(raw_path).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"missing required training artifact {key}: {path}")
 
 
 def evaluate_trained_checkpoint(
