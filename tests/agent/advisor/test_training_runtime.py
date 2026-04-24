@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from agent.advisor import ProfileCheckpointEvaluation, evaluate_profile_checkpoint_for_promotion
 from agent.advisor.evaluation.benchmark import BenchmarkRunManifest
 from agent.advisor.profiles import AdvisorProfileRegistry
@@ -60,6 +62,53 @@ class StubTrainer:
                 "trained_examples": len(training_samples),
             },
         }
+
+
+class MissingAdapterTrainer:
+    def train(self, request, checkpoint_dir, training_samples):
+        adapter_path = checkpoint_dir / "adapters.safetensors"
+        config_path = checkpoint_dir / "adapter_config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "base_model_name": request.training_config.base_model_name,
+                    "adapter_method": request.training_config.adapter_method,
+                    "lora_rank": request.training_config.lora_rank,
+                    "target_modules": request.training_config.target_modules,
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "artifact_paths": {
+                "adapter_model": str(adapter_path),
+                "adapter_config": str(config_path),
+            },
+            "metrics": {"trained_examples": len(training_samples)},
+        }
+
+
+def _runtime_rollout_group(*, profile_id: str = "coding-default", group_id: str = "group-train"):
+    return TrainingRolloutGroupResult(
+        group_id=group_id,
+        advisor_profile_id=profile_id,
+        results=[
+            TrainingRolloutResult(
+                rollout_id="rollout-1",
+                advisor_profile_id=profile_id,
+                packet={"run_id": "run-1"},
+                primary_advice={"recommended_plan": ["inspect main.py"]},
+                executor_result={"status": "success"},
+                verifier_results=[],
+                outcome={"status": "success"},
+                reward_label={"total_reward": 0.8},
+                diagnostics={"multi_turn": False},
+            )
+        ],
+        reward_values=[0.8],
+        summary={"mean_reward": 0.8},
+    )
 
 
 def test_checkpoint_lifecycle_manager_registers_promotes_and_rolls_back(tmp_path):
@@ -260,6 +309,55 @@ def test_run_profile_training_job_records_profile_owned_checkpoint_and_manifest(
     assert checkpoint_registry[0]["status"] == "candidate"
     assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
 
+
+def test_run_profile_training_job_refuses_candidate_when_adapter_file_is_missing(tmp_path):
+    registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+
+    with pytest.raises(FileNotFoundError, match="adapter_model"):
+        run_profile_training_job(
+            job_id="job-missing-adapter",
+            experiment_id="exp-14",
+            advisor_profile_id="coding-default",
+            rollout_group=_runtime_rollout_group(),
+            profile_registry=registry,
+            lifecycle_manager=manager,
+            backend=GRPOTrainingBackend(trainer=MissingAdapterTrainer()),
+        )
+
+    assert manager.list_checkpoints(advisor_profile_id="coding-default") == []
+
+
+def test_run_profile_training_job_registers_candidate_only_after_required_artifacts_exist(tmp_path):
+    registry = AdvisorProfileRegistry.from_toml("config/advisor_profiles.toml")
+    manager = CheckpointLifecycleManager(tmp_path / "artifacts")
+
+    result = run_profile_training_job(
+        job_id="job-artifacts",
+        experiment_id="exp-14",
+        advisor_profile_id="coding-default",
+        rollout_group=_runtime_rollout_group(),
+        profile_registry=registry,
+        lifecycle_manager=manager,
+        backend=GRPOTrainingBackend(trainer=StubTrainer()),
+    )
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    checkpoint_registry = json.loads((tmp_path / "artifacts" / "checkpoint_registry.json").read_text(encoding="utf-8"))
+    required_artifacts = {
+        "adapter_model",
+        "adapter_config",
+        "checkpoint_manifest",
+        "backend_manifest",
+        "training_manifest",
+    }
+
+    assert required_artifacts <= set(result.backend_artifact_paths)
+    assert result.backend_artifact_paths["training_manifest"] == result.manifest_path
+    assert manifest["backend_artifact_paths"] == result.backend_artifact_paths
+    assert all(Path(result.backend_artifact_paths[key]).exists() for key in required_artifacts)
+    assert checkpoint_registry[0]["status"] == "candidate"
+    assert checkpoint_registry[0]["checkpoint_id"] == result.checkpoint_id
 
 
 def test_run_profile_training_job_supports_researcher_profile(tmp_path):

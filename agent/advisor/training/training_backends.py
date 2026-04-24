@@ -384,6 +384,15 @@ class GRPOTrainingBackend:
         }
 
         checkpoint_manifest_path = checkpoint_dir / "checkpoint.json"
+        backend_manifest_path = job_dir / "backend-manifest.json"
+        artifact_paths = {
+            **trainer_result.artifact_paths,
+            "checkpoint_manifest": str(checkpoint_manifest_path),
+            "backend_manifest": str(backend_manifest_path),
+        }
+        trajectory_ids = _rollout_trajectory_ids(request)
+        lora_target_modules = list(request.training_config.target_modules)
+
         checkpoint_manifest_path.write_text(
             json.dumps(
                 {
@@ -392,9 +401,14 @@ class GRPOTrainingBackend:
                     "experiment_id": request.experiment_id,
                     "advisor_profile_id": request.advisor_profile_id,
                     "backend_name": self.backend_name,
+                    "rollout_group_id": request.rollout_group.group_id,
+                    "trajectory_ids": trajectory_ids,
+                    "base_model_name": request.training_config.base_model_name,
+                    "target_modules": lora_target_modules,
+                    "lora_rank": request.training_config.lora_rank,
                     "training_metrics": training_metrics,
                     "rollout_summary": request.rollout_group.summary,
-                    "artifact_paths": trainer_result.artifact_paths,
+                    "artifact_paths": artifact_paths,
                 },
                 indent=2,
                 sort_keys=True,
@@ -402,35 +416,34 @@ class GRPOTrainingBackend:
             encoding="utf-8",
         )
 
-        backend_manifest_path = job_dir / "backend-manifest.json"
         backend_manifest_path.write_text(
             json.dumps(
                 {
                     "job_id": request.job_id,
                     "experiment_id": request.experiment_id,
                     "advisor_profile_id": request.advisor_profile_id,
+                    "profile_id": request.advisor_profile_id,
                     "backend_name": self.backend_name,
                     "checkpoint_id": checkpoint_id,
                     "checkpoint_path": str(checkpoint_dir),
                     "training_config": request.training_config.model_dump(),
+                    "base_model_name": request.training_config.base_model_name,
+                    "adapter_method": request.training_config.adapter_method,
+                    "lora_rank": request.training_config.lora_rank,
+                    "target_modules": lora_target_modules,
                     "rollout_group_id": request.rollout_group.group_id,
+                    "trajectory_ids": trajectory_ids,
                     "rollout_summary": request.rollout_group.summary,
                     "training_metrics": training_metrics,
                     "training_sample_count": len(training_samples),
                     "training_group_count": len(training_groups),
-                    "artifact_paths": trainer_result.artifact_paths,
+                    "artifact_paths": artifact_paths,
                 },
                 indent=2,
                 sort_keys=True,
             ),
             encoding="utf-8",
         )
-
-        artifact_paths = {
-            "backend_manifest": str(backend_manifest_path),
-            "checkpoint_manifest": str(checkpoint_manifest_path),
-            **trainer_result.artifact_paths,
-        }
         return TrainingBackendRunResult(
             job_id=request.job_id,
             experiment_id=request.experiment_id,
@@ -442,6 +455,18 @@ class GRPOTrainingBackend:
             artifact_paths=artifact_paths,
             rollout_summary=request.rollout_group.summary,
         )
+
+
+def _rollout_trajectory_ids(request: TrainingBackendRunRequest) -> list[str]:
+    trajectory_ids: list[str] = []
+    for result in request.rollout_group.results:
+        if not result.trajectory:
+            continue
+        trajectory_payload = _normalized_payload(result.trajectory)
+        trajectory_id = trajectory_payload.get("trajectory_id")
+        if trajectory_id and trajectory_id not in trajectory_ids:
+            trajectory_ids.append(str(trajectory_id))
+    return trajectory_ids
 
 
 def _normalized_payload(payload: BaseModel | dict) -> dict:
