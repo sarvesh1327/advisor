@@ -173,6 +173,28 @@ def test_activity_snapshot_marks_missing_run_evidence_as_blocked(tmp_path):
 
 
 
+def test_activity_snapshot_counts_trajectory_coverage_by_run_id(tmp_path):
+    store = AdvisorTraceStore(tmp_path / "advisor.db")
+    _seed_activity_run(store, run_id="run-with-two-trajectories", with_reward=True, with_lineage=True, with_trajectory=True)
+    _seed_activity_run(store, run_id="run-without-trajectory", with_reward=True, with_lineage=True)
+    duplicate_trajectory = dict(store.list_trajectories(run_id="run-with-two-trajectories")[0])
+    duplicate_trajectory["trajectory_id"] = "trajectory:run-with-two-trajectories:retry"
+    store.record_trajectory(duplicate_trajectory)
+
+    snapshot = build_advisor_activity_snapshot(store, limit=5)
+
+    assert snapshot["evidence"]["database_counts"] == {
+        "runs": 2,
+        "outcomes": 2,
+        "reward_labels": 2,
+        "lineages": 2,
+        "trajectories": 1,
+    }
+    assert snapshot["evidence"]["blocked"] is True
+    assert snapshot["evidence"]["blocking_reasons"] == ["missing_trajectories"]
+
+
+
 def test_activity_snapshot_reports_active_adapter_artifact_evidence(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     lifecycle_manager = _seed_active_checkpoint(tmp_path)
