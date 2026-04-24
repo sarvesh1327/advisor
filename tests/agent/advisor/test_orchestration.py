@@ -80,7 +80,7 @@ def test_orchestrator_records_lineage_manifest_and_reward_for_advisor_arm(tmp_pa
         router=DeterministicABRouter(advisor_fraction=1.0),
     )
 
-    result = orchestrator.run(_packet())
+    result = orchestrator.run(_packet(), advisor_profile_id="coding-default")
 
     assert result.manifest.routing_decision.arm == "advisor"
     assert result.manifest.executor.kind == "frontier_chat"

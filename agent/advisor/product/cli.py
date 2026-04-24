@@ -17,6 +17,7 @@ from agent.advisor.operators.operator_runtime import (
     run_operator_job,
 )
 from agent.advisor.product.api import create_gateway, create_http_app, get_version
+from agent.advisor.product.dashboard import write_advisor_activity_dashboard
 from agent.advisor.product.hardening import (
     build_alert_summary,
     build_deployment_hardening_profile,
@@ -59,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     operator_parser = subparsers.add_parser("operator-overview", help="Print operator overview JSON")
     operator_parser.set_defaults(handler=_handle_operator_overview)
+
+    activity_dashboard_parser = subparsers.add_parser("activity-dashboard", help="Write a local Advisor activity dashboard HTML file")
+    activity_dashboard_parser.add_argument("--output-path", default=None, help="Optional output HTML path")
+    activity_dashboard_parser.add_argument("--limit", type=int, default=20, help="Maximum runs to include")
+    activity_dashboard_parser.set_defaults(handler=_handle_activity_dashboard)
 
     operator_run_parser = subparsers.add_parser("operator-run-job", help="Run a queued operator job by id")
     operator_run_parser.add_argument("--job-id", required=True, help="Queued operator job id")
@@ -204,6 +210,21 @@ def _handle_operator_overview(args) -> int:
     )
     print(json.dumps(snapshot, ensure_ascii=False))
     return 0
+
+
+
+def _handle_activity_dashboard(args) -> int:
+    settings = AdvisorSettings.load()
+    gateway = create_gateway(settings=settings)
+    default_output = Path(settings.trace_db_path).expanduser().parent / "dashboard" / "advisor-activity.html"
+    payload = write_advisor_activity_dashboard(
+        gateway.trace_store,
+        args.output_path or default_output,
+        limit=args.limit,
+    )
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
 
 
 def _handle_operator_run_job(args) -> int:

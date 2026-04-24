@@ -257,6 +257,13 @@ class MLXAdvisorRuntime:
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
             raise TimeoutError("generation exceeded timeout") from exc
+        except RuntimeError as exc:
+            executor.shutdown(wait=True, cancel_futures=False)
+            if "There is no Stream(gpu" in str(exc) and "current thread" in str(exc):
+                # mlx-lm GPU streams are thread-local on some macOS/MLX setups; if generation fails
+                # inside the timeout worker, retry once on the caller thread so real inference still works.
+                return _run_generate()
+            raise
         except Exception:
             executor.shutdown(wait=True, cancel_futures=False)
             raise

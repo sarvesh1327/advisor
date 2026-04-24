@@ -1,4 +1,6 @@
 import json
+import tomllib
+from pathlib import Path
 
 from agent.advisor.core.schemas import (
     AdviceBlock,
@@ -41,6 +43,12 @@ class StubGateway:
             model_version="advisor-qwen25-3b-v1",
             latency_ms=12,
         )
+
+
+def test_project_console_script_points_to_real_cli():
+    pyproject = tomllib.loads((Path(__file__).parents[3] / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["scripts"]["advisor"] == "agent.advisor.product.cli:main"
 
 
 def test_cli_version_prints_version(capsys):
@@ -115,6 +123,28 @@ def test_cli_operator_overview_prints_json(monkeypatch, tmp_path, capsys):
     assert exit_code == 0
     assert payload["deployment"]["mode"] == "single_tenant"
     assert payload["live_metrics"]["total_runs"] == 0
+
+
+
+def test_cli_activity_dashboard_writes_local_html(monkeypatch, tmp_path, capsys):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"), event_log_path=str(tmp_path / "events.jsonl"))
+    store = AdvisorTraceStore(settings.trace_db_path)
+
+    class StubGatewayWithStore:
+        def __init__(self, trace_store):
+            self.trace_store = trace_store
+
+    monkeypatch.setattr(cli.AdvisorSettings, "load", classmethod(lambda cls: settings))
+    monkeypatch.setattr(cli, "create_gateway", lambda **kwargs: StubGatewayWithStore(store))
+    output_path = tmp_path / "dashboard.html"
+
+    exit_code = cli.main(["activity-dashboard", "--output-path", str(output_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["output_path"] == str(output_path)
+    assert output_path.exists()
+    assert "Advisor activity dashboard" in output_path.read_text(encoding="utf-8")
 
 
 

@@ -26,6 +26,7 @@ from agent.advisor.operators.operator_runtime import (
     inspect_profile_checkpoints,
     run_operator_job,
 )
+from agent.advisor.product.dashboard import build_advisor_activity_snapshot, render_advisor_activity_dashboard
 from agent.advisor.product.hardening import build_phase8_validation_report
 from agent.advisor.profiles import AdvisorProfile, AdvisorProfileRegistry
 from agent.advisor.runtime.runtime_mlx import MLXAdvisorRuntime
@@ -34,8 +35,11 @@ from agent.advisor.training.training_runtime import CheckpointLifecycleManager
 
 try:
     from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse, RedirectResponse
 except ImportError:
     FastAPI = None
+    HTMLResponse = None
+    RedirectResponse = None
 
 
 class AdvisorGateway:
@@ -112,6 +116,7 @@ class AdvisorGateway:
         task_type_hint: str | None = None,
         system_prompt: str | None = None,
         advisor_profile_id: str | None = None,
+        caller_id: str | None = None,
         changed_files: list[str] | None = None,
     ) -> AdvisorTaskRunResult:
         resolved_profile = self.profile_registry.resolve(advisor_profile_id)
@@ -130,6 +135,7 @@ class AdvisorGateway:
         )
         packet.repo["session_id"] = session_id
         packet.repo["task_id"] = task_id
+        packet.repo["caller_id"] = caller_id
         started = time.perf_counter()
         generate_advice = self.runtime.generate_advice
         # Older runtimes may not support prompt overrides or profile-aware loads yet; keep the interface backward-compatible.
@@ -152,6 +158,7 @@ class AdvisorGateway:
             safe_advice,
             advisor_model=self.settings.model_version,
             advisor_profile_id=resolved_profile_id,
+            caller_id=caller_id,
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
             validated=True,
@@ -202,12 +209,18 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
     app = FastAPI(title="Advisor", version=__version__)
 
     # Keep HTTP routes thin; the gateway should remain the single source of execution behavior.
+    @app.get("/", include_in_schema=False)
+    def root():
+        return RedirectResponse(url="/dashboard/advisor-activity")
+
     @app.get("/healthz")
     def healthz():
         return gateway.system_health()
 
     @app.post("/v1/advisor/task-run", response_model=AdvisorTaskRunResult)
-    def task_run(req: AdvisorTaskRequest):
+    async def task_run(req: AdvisorTaskRequest):
+        # Keep MLX generation on the event-loop thread; FastAPI runs sync endpoints in
+        # a worker thread, which breaks MLX's thread-local GPU stream on macOS.
         return gateway.task_run(
             task_text=req.task_text,
             repo_path=req.repo_path,
@@ -219,6 +232,7 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
             task_type_hint=req.task_type_hint,
             system_prompt=req.system_prompt,
             advisor_profile_id=req.advisor_profile_id,
+            caller_id=req.caller_id,
             changed_files=req.changed_files,
         )
 
@@ -237,6 +251,14 @@ def create_app(settings: AdvisorSettings | None = None, runtime: Any | None = No
         if run is None:
             return {"run": None, "lineage": None}
         return {"run": run, "lineage": gateway.trace_store.get_lineage(run_id)}
+
+    @app.get("/v1/operator/advisor-activity")
+    def operator_advisor_activity(limit: int = 20):
+        return build_advisor_activity_snapshot(gateway.trace_store, limit=limit)
+
+    @app.get("/dashboard/advisor-activity", response_class=HTMLResponse)
+    def operator_advisor_activity_dashboard(limit: int = 20):
+        return render_advisor_activity_dashboard(build_advisor_activity_snapshot(gateway.trace_store, limit=limit))
 
     @app.get("/v1/operator/jobs")
     def operator_jobs():

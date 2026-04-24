@@ -50,4 +50,11 @@ def default_reward_specs() -> dict[str, RewardSpec]:
             reward_version="research-writing-match-v1",
             diagnostic_fields=["grounding_score", "constraint_compliance", "coverage_score"],
         ),
+        "generalist_multi_turn_conversation": RewardSpec(
+            reward_spec_id="generalist_multi_turn_conversation",
+            domain="conversation",
+            formula_name="generalist_multi_turn_conversation",
+            reward_version="generalist-multi-turn-conversation-v1",
+            diagnostic_fields=["helpfulness_score", "coherence_score", "constraint_compliance", "grounding_score"],
+        ),
     }

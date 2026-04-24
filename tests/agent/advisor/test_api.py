@@ -47,6 +47,7 @@ def test_create_http_app_includes_health_route(tmp_path):
     app = create_http_app(settings=settings)
 
     routes = {route.path for route in app.routes}
+    assert "/" in routes
     assert "/healthz" in routes
     assert "/v1/advisor/task-run" in routes
     assert "/v1/operator/overview" in routes
@@ -69,6 +70,8 @@ def test_create_http_app_includes_health_route(tmp_path):
     assert "/v1/learning/profiles/{advisor_profile_id}/resume" in routes
     assert "/v1/learning/profiles/{advisor_profile_id}/reset-backoff" in routes
     assert "/v1/learning/tick" in routes
+    assert "/v1/operator/advisor-activity" in routes
+    assert "/dashboard/advisor-activity" in routes
 
 
 def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
@@ -117,6 +120,17 @@ def test_force_eval_route_requires_and_preserves_benchmark_manifests(tmp_path):
     assert payload["payload"]["promotion_threshold"] == 0.2
     assert payload["payload"]["benchmark_manifests"] == benchmark_manifests
 
+
+
+def test_root_redirects_to_activity_dashboard(tmp_path):
+    settings = AdvisorSettings(enabled=True, trace_db_path=str(tmp_path / "advisor.db"))
+    app = create_http_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"] == "/dashboard/advisor-activity"
 
 
 def test_get_version_returns_repo_version():

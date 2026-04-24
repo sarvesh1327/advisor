@@ -1,5 +1,6 @@
 from agent.advisor.core.schemas import AdviceBlock, AdvisorInputPacket, AdvisorOutcome, CandidateFile, RepoSummary
 from agent.advisor.domain_rewards.coding import compute_coding_exact_answer_reward, compute_coding_swe_efficiency_reward
+from agent.advisor.domain_rewards.conversation import compute_generalist_multi_turn_reward
 from agent.advisor.domain_rewards.research import compute_research_writing_match_reward
 from agent.advisor.domain_rewards.ui import compute_ui_edit_from_screenshot_reward, compute_ui_from_text_layout_reward
 from agent.advisor.profiles import AdvisorProfile
@@ -196,3 +197,57 @@ def test_research_reward_function_averages_grounding_constraint_and_coverage_sco
         "constraint_compliance": 0.6,
         "coverage_score": 0.75,
     }
+
+
+
+def test_generalist_multi_turn_reward_weights_helpfulness_coherence_constraints_and_grounding():
+    reward, diagnostics = compute_generalist_multi_turn_reward(
+        helpfulness_score=0.9,
+        coherence_score=0.8,
+        constraint_compliance=0.6,
+        grounding_score=0.4,
+    )
+
+    assert reward == 0.725
+    assert diagnostics == {
+        "helpfulness_score": 0.9,
+        "coherence_score": 0.8,
+        "constraint_compliance": 0.6,
+        "grounding_score": 0.4,
+    }
+
+
+
+def test_reward_registry_resolves_generalist_profile_to_multi_turn_conversation_reward():
+    registry = RewardRegistry.default()
+    packet = _packet("run-generalist")
+    packet.task.domain = "conversation"
+    advice = AdviceBlock(task_type="conversation", recommended_plan=["answer directly", "track prior user turns"], confidence=0.8)
+    outcome = AdvisorOutcome(run_id=packet.run_id, status="success", files_touched=[], retries=0, tests_run=[])
+
+    label = registry.compute_for_profile_id(
+        "generalist",
+        packet,
+        advice,
+        outcome,
+        profile_domain="conversation",
+        executor_result={"status": "success", "metadata": {"turn_count": 4}},
+        verifier_results=[
+            {
+                "status": "pass",
+                "metadata": {
+                    "helpfulness_score": 0.9,
+                    "coherence_score": 0.8,
+                    "constraint_compliance": 0.6,
+                    "grounding_score": 0.4,
+                },
+            }
+        ],
+    )
+
+    assert label.advisor_profile_id == "generalist"
+    assert label.reward_profile_id == "generalist_multi_turn_conversation"
+    assert label.reward_formula == "generalist_multi_turn_conversation"
+    assert label.reward_version == "generalist-multi-turn-conversation-v1"
+    assert label.raw_reward == 0.725
+    assert label.reward_diagnostics["helpfulness_score"] == 0.9

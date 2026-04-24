@@ -33,7 +33,8 @@ class AdvisorTraceStore:
                   branch TEXT,
                   session_id TEXT,
                   task_id TEXT,
-                  advisor_profile_id TEXT
+                  advisor_profile_id TEXT,
+                  caller_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS run_contexts (
                   run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
@@ -107,6 +108,8 @@ class AdvisorTraceStore:
             }
             if "advisor_profile_id" not in run_columns:
                 conn.execute("ALTER TABLE runs ADD COLUMN advisor_profile_id TEXT")
+            if "caller_id" not in run_columns:
+                conn.execute("ALTER TABLE runs ADD COLUMN caller_id TEXT")
             for column_name in (
                 "task_json",
                 "context_json",
@@ -134,6 +137,7 @@ class AdvisorTraceStore:
         *,
         advisor_model: str,
         advisor_profile_id: str = "default",
+        caller_id: str | None = None,
         latency_ms: int,
         prompt_hash: str,
         validated: bool = True,
@@ -144,8 +148,8 @@ class AdvisorTraceStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO runs(run_id, started_at, task_text, task_type, repo_path, branch, session_id, task_id, advisor_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO runs(run_id, started_at, task_text, task_type, repo_path, branch, session_id, task_id, advisor_profile_id, caller_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     packet.run_id,
@@ -157,6 +161,7 @@ class AdvisorTraceStore:
                     packet.repo.get("session_id"),
                     packet.repo.get("task_id"),
                     advisor_profile_id,
+                    caller_id or packet.repo.get("caller_id"),
                 ),
             )
             conn.execute(
@@ -357,6 +362,7 @@ class AdvisorTraceStore:
             "session_id": row["session_id"],
             "task_id": row["task_id"],
             "advisor_profile_id": row["advisor_profile_id"],
+            "caller_id": row["caller_id"],
             "advice": json.loads(row["advice_json"]) if row["advice_json"] else None,
             "injected_advice": json.loads(row["injected_advice_json"]) if row["injected_advice_json"] else None,
             "injected_rendered_advice": row["injected_rendered_advice"],
@@ -382,7 +388,7 @@ class AdvisorTraceStore:
                 run_id=row["run_id"],
                 task_text=row["task_text"],
                 task_type=row["task_type"],
-                repo={"path": row["repo_path"], "branch": row["branch"], "dirty": False},
+                repo={"path": row["repo_path"], "branch": row["branch"], "dirty": False, "caller_id": row["caller_id"]},
                 repo_summary=json.loads(row["repo_summary_json"]) if row["repo_summary_json"] else {},
                 candidate_files=json.loads(row["candidate_files_json"]) if row["candidate_files_json"] else [],
                 recent_failures=json.loads(row["recent_failures_json"]) if row["recent_failures_json"] else [],

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from agent.advisor.adapters.coding_adapter import CodingContextAdapter
+from agent.advisor.adapters.conversation_adapter import ConversationContextAdapter
 from agent.advisor.adapters.image_adapter import ImageUIContextAdapter, TextUIContextAdapter
 from agent.advisor.adapters.research_adapter import ResearchContextAdapter
 from agent.advisor.core.schemas import AdvisorInputPacket, CandidateFile
@@ -44,6 +45,7 @@ class ContextBuilder:
             "research-writing": ResearchContextAdapter(token_budget=token_budget),
             "text-ui": TextUIContextAdapter(token_budget=token_budget),
             "image-ui": ImageUIContextAdapter(token_budget=token_budget),
+            "conversation": ConversationContextAdapter(token_budget=token_budget),
         }
 
     def build(
