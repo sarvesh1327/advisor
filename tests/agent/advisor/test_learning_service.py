@@ -4,14 +4,13 @@ from agent.advisor.core.settings import AdvisorSettings
 from agent.advisor.learning.controller import AutonomousLearningController
 from agent.advisor.learning.service import run_autonomous_learning_service
 from agent.advisor.storage.trace_store import AdvisorTraceStore
-from tests.agent.advisor.test_learning_controller import _seed_dogfood_run
+from tests.agent.advisor.test_learning_controller import _seed_dogfood_runs
 
 ADVISOR_REPO = str(Path("/Users/clawuser/Desktop/Black-box steer/Advisor").expanduser())
 
 
 def test_run_autonomous_learning_service_ticks_without_duplicate_cycles(tmp_path, monkeypatch):
-    settings, store, _ = _seed_dogfood_run(tmp_path, "run-service-1")
-    _seed_dogfood_run(tmp_path, "run-service-2")
+    settings, store = _seed_dogfood_runs(tmp_path, "run-service")
 
     calls = {"count": 0}
 
@@ -32,6 +31,7 @@ def test_run_autonomous_learning_service_ticks_without_duplicate_cycles(tmp_path
 
     assert result["tick_count"] == 2
     assert calls["count"] == 1
+    assert result["controller_status"]["profiles"]["coding-default"]["consumed_trajectory_ids"]
     assert result["controller_status"]["profiles"]["coding-default"]["consumed_run_ids"]
 
 

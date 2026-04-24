@@ -20,6 +20,7 @@ class AutonomousLearningPolicy(BaseModel):
 
 class ProfileLearningState(BaseModel):
     advisor_profile_id: str
+    consumed_trajectory_ids: list[str] = Field(default_factory=list)
     consumed_run_ids: list[str] = Field(default_factory=list)
     last_cycle_started_at: str | None = None
     last_cycle_completed_at: str | None = None

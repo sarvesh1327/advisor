@@ -182,7 +182,12 @@ class AutonomousLearningController:
                 self._record_failure(state, profile_id, str(exc))
                 result.skipped_profiles[profile_id] = [f"cycle_failed:{exc}"]
                 continue
-            mark_rollout_group_consumed(state, advisor_profile_id=profile_id, run_ids=collection.run_ids)
+            mark_rollout_group_consumed(
+                state,
+                advisor_profile_id=profile_id,
+                run_ids=collection.run_ids,
+                trajectory_ids=collection.trajectory_ids,
+            )
             profile_state = _profile_state(state, profile_id)
             profile_state.active_cycle_job_ids = []
             profile_state.last_cycle_completed_at = utc_now().isoformat()

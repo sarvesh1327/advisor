@@ -1,3 +1,4 @@
+import sqlite3
 import textwrap
 from pathlib import Path
 
@@ -68,6 +69,31 @@ def _seed_dogfood_run(tmp_path, run_id: str, profile_id: str = "coding-default")
     return settings, store, result
 
 
+def _delete_trajectories(settings: AdvisorSettings) -> None:
+    with sqlite3.connect(settings.trace_db_path) as conn:
+        conn.execute("DELETE FROM advisor_trajectories")
+
+
+
+def _clear_trajectory_rewards(settings: AdvisorSettings) -> None:
+    with sqlite3.connect(settings.trace_db_path) as conn:
+        conn.execute("UPDATE advisor_trajectories SET final_reward_json = NULL")
+
+
+
+def _seed_dogfood_runs(tmp_path, prefix: str, count: int = 4):
+    first_settings = None
+    first_store = None
+    for index in range(1, count + 1):
+        settings, store, _ = _seed_dogfood_run(tmp_path, f"{prefix}-{index}")
+        first_settings = first_settings or settings
+        first_store = first_store or store
+    assert first_settings is not None
+    assert first_store is not None
+    return first_settings, first_store
+
+
+
 def _write_zero_group_profiles(tmp_path):
     config_path = tmp_path / "profiles-zero-group.toml"
     config_path.write_text(
@@ -100,8 +126,7 @@ def _write_zero_group_profiles(tmp_path):
 
 
 def test_autonomous_learning_controller_consumes_real_dogfood_runs_and_persists_state(tmp_path, monkeypatch):
-    settings, store, _ = _seed_dogfood_run(tmp_path, "run-dogfood-1")
-    _seed_dogfood_run(tmp_path, "run-dogfood-2")
+    settings, store = _seed_dogfood_runs(tmp_path, "run-dogfood")
 
     def fake_cycle_runner(queue, **kwargs):
         del queue
@@ -116,8 +141,7 @@ def test_autonomous_learning_controller_consumes_real_dogfood_runs_and_persists_
 
     controller = AutonomousLearningController(settings=settings, trace_store=store)
     tick = controller.tick()
-    _seed_dogfood_run(tmp_path, "run-dogfood-11")
-    _seed_dogfood_run(tmp_path, "run-dogfood-12")
+    _seed_dogfood_runs(tmp_path, "run-dogfood-next")
     second_tick = controller.tick()
     status = controller.controller_status()
 
@@ -125,15 +149,15 @@ def test_autonomous_learning_controller_consumes_real_dogfood_runs_and_persists_
     assert tick["cycle_results"]["coding-default"]["promoted"] is True
     assert second_tick["launched_profiles"] == ["coding-default"]
     profile_state = status["profiles"]["coding-default"]
-    assert len(profile_state["consumed_run_ids"]) == 4
+    assert len(profile_state["consumed_trajectory_ids"]) == 8
+    assert len(profile_state["consumed_run_ids"]) == 8
     assert profile_state["last_cycle_experiment_id"] is not None
     assert profile_state["last_cycle_completed_at"] is not None
     assert profile_state["active_cycle_job_ids"] == []
 
 
 def test_autonomous_learning_controller_applies_backoff_and_profile_pause_after_repeated_failures(tmp_path, monkeypatch):
-    settings, store, _ = _seed_dogfood_run(tmp_path, "run-fail-1")
-    _seed_dogfood_run(tmp_path, "run-fail-2")
+    settings, store = _seed_dogfood_runs(tmp_path, "run-fail")
 
     def failing_cycle_runner(queue, **kwargs):
         del queue, kwargs
@@ -161,8 +185,7 @@ def test_autonomous_learning_controller_applies_backoff_and_profile_pause_after_
 
 
 def test_autonomous_learning_controller_readiness_report_blocks_when_no_fresh_runs_remain(tmp_path, monkeypatch):
-    settings, store, _ = _seed_dogfood_run(tmp_path, "run-ready-1")
-    _seed_dogfood_run(tmp_path, "run-ready-2")
+    settings, store = _seed_dogfood_runs(tmp_path, "run-ready")
 
     monkeypatch.setattr(
         "agent.advisor.learning.controller.run_continuous_training_cycle",
@@ -183,8 +206,7 @@ def test_autonomous_learning_controller_readiness_report_blocks_when_no_fresh_ru
 
 
 def test_collect_fresh_rollout_groups_blocks_non_positive_rollout_group_size(tmp_path):
-    settings, store, _ = _seed_dogfood_run(tmp_path, "run-zero-1")
-    _seed_dogfood_run(tmp_path, "run-zero-2")
+    settings, store = _seed_dogfood_runs(tmp_path, "run-zero")
     registry = _write_zero_group_profiles(tmp_path)
     state = AutonomousLearningState()
 
@@ -206,3 +228,76 @@ def test_collect_fresh_rollout_groups_blocks_non_positive_rollout_group_size(tmp
         )
         is None
     )
+
+
+
+def test_learning_readiness_blocks_when_fresh_trajectories_are_below_rollout_group_size(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-under-sized", count=2)
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path),
+        state=AutonomousLearningState(),
+        advisor_profile_id="coding-default",
+    )
+
+    assert report.ready is False
+    assert report.fresh_trajectory_count == 2
+    assert report.summary["required_rollout_group_size"] == 4
+    assert "insufficient_fresh_trajectories" in report.blocking_reasons
+
+
+
+def test_learning_readiness_blocks_rewarded_runs_without_trajectories(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-no-trajectory")
+    _delete_trajectories(settings)
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path),
+        state=AutonomousLearningState(),
+        advisor_profile_id="coding-default",
+    )
+
+    assert report.ready is False
+    assert report.fresh_run_count == 4
+    assert report.fresh_trajectory_count == 0
+    assert "insufficient_fresh_trajectories" in report.blocking_reasons
+
+
+
+def test_learning_readiness_blocks_trajectories_without_final_reward(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-unrewarded-trajectory")
+    _clear_trajectory_rewards(settings)
+
+    report = build_learning_readiness_report(
+        store=store,
+        registry=AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path),
+        state=AutonomousLearningState(),
+        advisor_profile_id="coding-default",
+    )
+
+    assert report.ready is False
+    assert report.fresh_run_count == 4
+    assert report.fresh_trajectory_count == 0
+    assert "insufficient_fresh_trajectories" in report.blocking_reasons
+
+
+
+def test_collect_fresh_rollout_groups_uses_unconsumed_rewarded_trajectories(tmp_path):
+    settings, store = _seed_dogfood_runs(tmp_path, "run-trajectory-source")
+    registry = AdvisorProfileRegistry.from_toml(settings.advisor_profiles_path)
+    state = AutonomousLearningState()
+
+    collection = collect_fresh_rollout_groups(
+        store=store,
+        registry=registry,
+        state=state,
+        advisor_profile_id="coding-default",
+    )
+
+    assert collection is not None
+    assert len(collection.trajectory_ids) == 4
+    assert len(collection.run_ids) == 4
+    assert collection.rollout_group.summary["source_trajectory_ids"] == collection.trajectory_ids
+    assert all(result.trajectory for result in collection.rollout_group.results)
