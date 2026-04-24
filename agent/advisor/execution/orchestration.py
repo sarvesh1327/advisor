@@ -190,7 +190,11 @@ def run_executor_step(executor: Any, request: ExecutorStepRequest) -> ExecutorSt
     execute_step = getattr(executor, "execute_step", None)
     if callable(execute_step):
         result = execute_step(request)
-        return result if isinstance(result, ExecutorStepResult) else ExecutorStepResult(**dict(result))
+        if isinstance(result, ExecutorStepResult):
+            return result
+        if isinstance(result, ExecutorRunResult):
+            return _executor_run_result_to_step_result(result)
+        return ExecutorStepResult(**dict(result))
     legacy_result = executor.execute(
         ExecutorRequest(
             run_id=request.packet.run_id,

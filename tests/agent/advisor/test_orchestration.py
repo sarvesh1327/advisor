@@ -116,6 +116,34 @@ def test_run_executor_step_adapts_legacy_executor_to_terminal_step():
     assert result.metrics["retries"] == 1
 
 
+def test_run_executor_step_adapts_step_executor_returning_legacy_result_to_terminal_step():
+    class StepExecutorReturningLegacyResult:
+        def execute_step(self, request):
+            return ExecutorRunResult(
+                status="success",
+                summary="step reused legacy executor path",
+                output="patched gateway.py",
+                files_touched=["agent/advisor/gateway.py"],
+                tests_run=["pytest -q"],
+                metadata={"steps": 2},
+                retries=1,
+            )
+
+    result = run_executor_step(
+        StepExecutorReturningLegacyResult(),
+        ExecutorStepRequest(
+            trajectory_id="traj-step-legacy",
+            turn_index=0,
+            packet=_packet("run-step-legacy"),
+            advice=AdviceBlock(task_type="bugfix", recommended_plan=["reuse legacy path"]),
+        ),
+    )
+
+    assert result.done is True
+    assert result.metrics["steps"] == 2
+    assert result.metrics["retries"] == 1
+
+
 def test_orchestrator_records_lineage_manifest_and_reward_for_advisor_arm(tmp_path):
     store = AdvisorTraceStore(tmp_path / "advisor.db")
     runtime = StubRuntime(
